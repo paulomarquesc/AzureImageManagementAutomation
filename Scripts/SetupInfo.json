@@ -1,7 +1,7 @@
 {
     "general":
     {
-        "tenantName":"pmcglobal.onmicrosoft.com",
+        "tenantName":"tenantname.onmicrosoft.com",
         "copyProcessQueueName":"copy-process-queue",
         "imageCreationQueueName":"image-creation-process-queue"
     },
@@ -18,7 +18,7 @@
             "storageAccountPrefix":"pmcstorage77",
             "resourceGroup":"imageprocess-rg",
             "location":"westus2",
-            "subscriptionId":"4a49ea85-ce71-4800-b854-5d18e557921e",
+            "subscriptionId":"af86d43c-d9b4-4b18-a1a4-1db9830c015a",
             "container":"vhd",
             "modulesContainer":"modules",
             "configurationTableName":"imageManagementConfiguration",
@@ -38,7 +38,7 @@
                 "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
                 "location":"^$config.storage.tier0StorageAccount.location",
                 "container":"^$config.storage.tier0StorageAccount.container",
-                "subscriptionId":"4c88ebbb-1a1d-4e0a-980c-f76b82743539"
+                "subscriptionId":"c0d433f7-b5e8-441a-91b5-5db70c69d7b8"
             }
         ]
     },
