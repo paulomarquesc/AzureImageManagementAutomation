@@ -28,11 +28,12 @@
         VHD's Operating System type, valid ones are Windows and Linux.  
     .EXAMPLE
         .\UploadVHD.ps1 -Tier0SubscriptionId $Tier0SubscriptionId `
-                -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
-                -ConfigStorageAccountName $ConfigStorageAccountName `
-                -ImageName $imageName `
-                -VhdFullPath c:\temp\newvhd.vhd `
-                -OsType "Windows"
+            -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
+            -ConfigStorageAccountName $ConfigStorageAccountName `
+            -ImageName $imgName `
+            -VhdFullPath "e:\Windows2016-Img01.vhd" `
+            -OsType "Windows" `
+            -ImageResourceGroupName "Images-RG01"
     
 #>
 Param

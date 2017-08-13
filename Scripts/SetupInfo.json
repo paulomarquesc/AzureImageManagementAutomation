@@ -19,7 +19,7 @@
             "resourceGroup":"imageprocess-rg",
             "location":"westus2",
             "subscriptionId":"af86d43c-d9b4-4b18-a1a4-1db9830c015a",
-            "container":"vhd",
+            "container":"vhds",
             "modulesContainer":"modules",
             "configurationTableName":"imageManagementConfiguration",
             "tier1Copies":10
@@ -45,10 +45,10 @@
     "automationAccount":
     {
         "subscriptionId":"^$config.storage.tier0StorageAccount.subscriptionId",
-        "applicationDisplayNameSuffix":"TestAutomationSP",
+        "applicationDisplayNamePrefix":"TestAutomationSP",
         "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
         "location":"southcentralus",
-        "automationAccountNameSuffix":"ImageManagementAutomation",
+        "automationAccountNamePrefix":"ImageManagementAutomation",
         "workerAutomationAccountsCount":2,
         "availableDedicatedCopyJobs":150,
         "maxDedicatedCopyJobs":150,

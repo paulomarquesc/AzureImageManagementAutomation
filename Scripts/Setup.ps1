@@ -212,7 +212,7 @@
     Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
 
     # Adding main automation account
-    $result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals (Get-ConfigValue $config.automationAccount.automationAccountNameSuffix $config)
+    $result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals (Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config)
 
     if ($result -eq $null)
     {
@@ -224,10 +224,10 @@
             New-AzureRmResourceGroup -Name (Get-ConfigValue $config.automationAccount.resourceGroup $config) -Location (Get-ConfigValue $config.storage.tier0StorageAccount.location $config)
         }
 
-        New-AzureRmImgMgmtAutomationAccount -automationAccountName (Get-ConfigValue $config.automationAccount.automationAccountNameSuffix $config) `
+        New-AzureRmImgMgmtAutomationAccount -automationAccountName (Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config) `
             -resourceGroupName (Get-ConfigValue $config.automationAccount.resourceGroup $config) `
             -location (Get-ConfigValue $config.automationAccount.location $config) `
-            -applicationDisplayName (Get-ConfigValue $config.automationAccount.applicationDisplayNameSuffix $config) `
+            -applicationDisplayName (Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config) `
             -subscriptionId (Get-ConfigValue $config.automationAccount.subscriptionId $config) `
             -modulesContainerUrl ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))) `
             -sasToken $sasToken `
@@ -236,10 +236,10 @@
             -basicTier
 
         # Adding the main automation account info in the configuration table
-        [hashtable]$mainAutomationAccountProps = @{ "automationAccountName"=Get-ConfigValue $config.automationAccount.automationAccountNameSuffix $config;
+        [hashtable]$mainAutomationAccountProps = @{ "automationAccountName"=Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config;
                                             "resourceGroupName"=Get-ConfigValue $config.automationAccount.resourceGroup $config;
                                             "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
-                                            "applicationDisplayName"=Get-ConfigValue $config.automationAccount.applicationDisplayNameSuffix $config;
+                                            "applicationDisplayName"=Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config;
                                             "type"="main";
                                             "location"=Get-ConfigValue $config.automationAccount.location $config;
                                             "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
@@ -253,8 +253,8 @@
 
     for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAccountsCount $config);$i++)
     {
-        $copyAutomationAccountName = [string]::Format("{0}-Copy{1}",(Get-ConfigValue $config.automationAccount.automationAccountNameSuffix $config),$i.ToString("000"))
-        $copyApplicationDisplayName = [string]::Format("{0}-Copy{1}",(Get-ConfigValue $config.automationAccount.applicationDisplayNameSuffix $config),$i.ToString("000"))
+        $copyAutomationAccountName = [string]::Format("{0}-Copy{1}",(Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config),$i.ToString("000"))
+        $copyApplicationDisplayName = [string]::Format("{0}-Copy{1}",(Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config),$i.ToString("000"))
 
         $result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals $copyAutomationAccountName
 
@@ -299,8 +299,8 @@
 
     for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAccountsCount $config);$i++)
     {
-        $imgAutomationAccountName = [string]::Format("{0}-Img{1}",(Get-ConfigValue $config.automationAccount.automationAccountNameSuffix $config),$i.ToString("000"))
-        $imgApplicationDisplayName = [string]::Format("{0}-Img{1}",(Get-ConfigValue $config.automationAccount.applicationDisplayNameSuffix $config),$i.ToString("000"))
+        $imgAutomationAccountName = [string]::Format("{0}-Img{1}",(Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config),$i.ToString("000"))
+        $imgApplicationDisplayName = [string]::Format("{0}-Img{1}",(Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config),$i.ToString("000"))
 
         $result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals $imgAutomationAccountName
 
