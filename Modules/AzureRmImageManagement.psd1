@@ -19,19 +19,19 @@ Description = 'Sample PowerShell Module that contains core functions related to 
 HelpInfoUri = ''
 
 # Version number of this module
-ModuleVersion = '1.0.0.11'
+ModuleVersion = '1.0.0.13'
 
 # Minimum version of the Windows PowerShell engine required by this module
-PowerShellVersion = '4.0'
+PowerShellVersion = '5.0'
 
 # Minimum version of the common language runtime (CLR) required by this module
 CLRVersion = '2.0'
 
 # Script module or binary module file associated with this manifest
-#ModuleToProcess = ''
+ModuleToProcess = 'AzureRmImageManagementCoreHelper.psm1'
 
 # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-NestedModules = @('AzureRmImageManagementCoreHelper.psm1')
+NestedModules = ''
 
 FunctionsToExport = @(  'Start-AzureRmImgMgmtVhdCopy',
                         'Get-AzureRmImgMgmtAvailableAutomationAccount',
@@ -39,8 +39,12 @@ FunctionsToExport = @(  'Start-AzureRmImgMgmtVhdCopy',
                         'New-AzureRmImgMgmtAutomationAccount',
                         'Get-AzureRmImgMgmtAuthToken',
                         'Get-AzureRmImgMgmtAuthHeader',
-                        'Get-ConfigValue')
+                        'Get-ConfigValue',
+                        'Add-AzureRmRmImgMgmtJob',
+                        'Add-AzureRmImgMgmtLog',
+                        'Get-AzureRmImgMgmtLog')
 
 VariablesToExport = ''
+
 
 }

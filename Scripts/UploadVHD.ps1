@@ -27,38 +27,44 @@
     .PARAMETER OsType
         VHD's Operating System type, valid ones are Windows and Linux.  
     .EXAMPLE
-        .\UploadVHD.ps1 -Tier0SubscriptionId $Tier0SubscriptionId `
+        .\UploadVHD.ps1 -description "test submission 01" `
+            -Tier0SubscriptionId $Tier0SubscriptionId `
             -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
             -ConfigStorageAccountName $ConfigStorageAccountName `
             -ImageName $imgName `
-            -VhdFullPath "e:\Windows2016-Img01.vhd" `
+            -VhdFullPath "c:\temp\Test2016-Img01.vhd" `
             -OsType "Windows" `
             -ImageResourceGroupName "Images-RG01"
     
 #>
+using module AzureRmImageManagement
+
 Param
 (
     [Parameter(Mandatory=$true)]
-    [String] $ConfigStorageAccountResourceGroupName,
+    [string]$ConfigStorageAccountResourceGroupName,
 
     [Parameter(Mandatory=$true)]
-    [String] $ConfigStorageAccountName,
+    [string]$ConfigStorageAccountName,
+
+    [Parameter(Mandatory=$true)]
+    [string]$Description,
     
     [Parameter(Mandatory=$false)]
     [AllowNull()]
     [string]$ConfigurationTableName= "imageManagementConfiguration",
 
     [Parameter(Mandatory=$true)]
-    [String] $VhdFullPath,
+    [string] $VhdFullPath,
 
     [Parameter(Mandatory=$true)]
-    [String] $ImageName,
+    [string] $ImageName,
 
     [Parameter(Mandatory=$true)]
-    [String] $ImageResourceGroupName,
+    [string] $ImageResourceGroupName,
 
     [Parameter(Mandatory=$false)]
-    [String] $UploaderThreadNumber = 10,
+    [string] $UploaderThreadNumber = 10,
 
     [Parameter(Mandatory=$false)]
     [switch] $Overwrite,
@@ -70,82 +76,149 @@ Param
     [ValidateSet("Windows","Linux")]
     [string]$OsType
 )
-$ErrorActionPreference = "Stop"
 
 Import-Module AzureRmStorageTable
 Import-Module AzureRmStorageQueue
+
+$moduleName = Split-Path $MyInvocation.MyCommand.Definition -Leaf
+$ErrorActionPreference = "Stop"
 
 Write-Verbose "Starting upload script" -Verbose
 
 Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 
-# Variables
-#$logTableName = "ImageManagementLogs"
+# Getting a reference to the configuration table
+$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+
+# Getting appropriate job tables
+$jobTablesInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
+
+if ($jobTablesInfo -eq $null)
+{
+    throw "System configuration table does not contain configuartion item for job submission and logging."
+}
+
+# Getting the Job Submission and Job Log table
+$jobsTable = Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobTableName
+$log = Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName
+
+$jobId = [guid]::NewGuid().guid
+
+Write-Verbose "JOB ID: $jobID" -Verbose
+
+# Creating job submission information
+$submissionDateUTC = (get-date -date ([datetime]::utcnow) -Format G)
+Add-AzureRmRmImgMgmtJob -logTable $log -jobId $jobId -description $Description -submissionDate $submissionDateUTC -status ([status]::InProgress) -jobsTable $jobsTable
 
 # Obtaining the tier 0 storage account (the one that receives the vhd from on-premises)
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
-#$logTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $logTableName
+$msg = "Obtaining the tier 0 storage account (the one that receives the vhd from on-premises)"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-$tier0StorageAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable 
-# TODO: Implement log
+$tier0StorageAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable
 
 if ($tier0StorageAccount -eq $null)
 {
-    # TODO: Implement log
-    throw "System configuration table does not contain a configured tier 0 storage account which is where the VHD is uploaded from on-premises and starts the distribution process."
+    $msg = "System configuration table does not contain a configured tier 0 storage account which is where the VHD is uploaded from on-premises and starts the distribution process."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
+}
+else
+{
+    $msg = "Tier 0 Storage account name: $($tier0StorageAccount.StorageAccountName)"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 }
 
 # Checking if VHD file exists
+$msg = "Checking if local VHD file ($VhdFullPath) exists"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 if (!(Test-Path $VhdFullPath))
 {
-    # TODO: Implement log
-    throw "VHD file $VhdFullPath not found."
+    $msg = "VHD file $VhdFullPath not found."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
 }
 
 # Uploading the VHD
 
 # TODO: Implement log - start
 $uri = [string]::Format("https://{0}.blob.core.windows.net/{1}/{2}",$tier0StorageAccount.StorageAccountName,$tier0StorageAccount.container,[system.io.path]::GetFileName($VhdFullPath))
-Add-AzureRmVhd `
-    -ResourceGroupName $tier0StorageAccount.resourceGroupName `
-    -Destination $uri `
-    -LocalFilePath $VhdFullPath `
-    -NumberOfUploaderThreads $uploaderThreadNumber `
-    -OverWrite:$overrite
 
-# TODO: Implement log - end
+$msg = "Starting uploading VHD to $uri"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-# TODO: Implement log - start runbook
-# Execute runbook to copy VHD to tier 1 storage accounts
-# TODO: Implement runbook
+try
+{
+    Add-AzureRmVhd `
+        -ResourceGroupName $tier0StorageAccount.resourceGroupName `
+        -Destination $uri `
+        -LocalFilePath $VhdFullPath `
+        -NumberOfUploaderThreads $uploaderThreadNumber `
+        -OverWrite:$overrite
+
+    $msg = "Uploading VHD ($VhdFullPath) completed"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+}
+catch
+{
+    $msg = "An error occured executing Add-AzureRmVhd."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)   
+    
+    $msg = "Error Details: $_"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+    throw $_
+}
 
 # Getting Main Automation Account information
+$msg = "Getting Main Automation Account information"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $mainAutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'automationAccount') and (type eq 'main')" -table $configurationTable 
 
 if ($mainAutomationAccount -eq $null)
 {
-    throw "Main automation account informaiton could not be found at the configuration table."
+    $msg = "Main automation account informaiton could not be found at the configuration table."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    
+    throw $msg
 }
+
+$msg = "Main Automation Account identified as $($mainAutomationAccount.automationAccountName) at resource group $($mainAutomationAccount.resourceGroupName)"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
             "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;
             "ConfigStorageAccountName"=$ConfigStorageAccountName;
             "VhdName"=[system.io.path]::GetFileName($VhdFullPath);
             "ConfigurationTableName"=$ConfigurationTableName;
-            "StatusCheckInterval"=60}
+            "StatusCheckInterval"=60;
+            "jobId"=$jobId}
 
-$job = Start-AzureRmAutomationRunbook  -Name "Start-ImageManagementTier1Distribution" `
-                                       -Parameters $params `
-                                       -AutomationAccountName $mainAutomationAccount.automationAccountName `
-                                       -ResourceGroupName $mainAutomationAccount.resourceGroupName -Wait
+$msg = "Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters: $($params | convertTo-json -Compress)"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        
+try
+{
+    $job = Start-AzureRmAutomationRunbook  -Name "Start-ImageManagementTier1Distribution" `
+                                           -Parameters $params `
+                                           -AutomationAccountName $mainAutomationAccount.automationAccountName `
+                                           -ResourceGroupName $mainAutomationAccount.resourceGroupName -Wait
+    
+    $msg = "Tier1 distribution completed"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+}
+catch
+{
+    $msg = "Tier1 distribution failed, execution of runbook Start-ImageManagementTier1Distribution failed."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
 
-# TODO: Implement log - end runbook
+    $msg = "Error Details: $_"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
 
-# Place message in the copy queue for each subscription
-
-# Going to need the images resource group in each subscription
-
-# TODO: Implement log
+    throw $_
+}
+# Place message in the copy queue to start tier 2 distribution (VHD copy to each storage account per region/subscription)
 
 $queueInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable 
 
@@ -156,6 +229,16 @@ $copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccou
 $vhdMessage = @{ "vhdName"=[system.io.path]::GetFileName($VhdFullPath);
                  "imageName"=$ImageName;
                  "osType"=$osType;
-                 "imageResourceGroupName"=$ImageResourceGroupName}
+                 "imageResourceGroupName"=$ImageResourceGroupName;
+                 "jobId"=$jobId}
 
+$msg = "Placing message in the queue for tier2 distribution process (VHD copy to each subscription and related regions)."
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+$msg = $vhdMessage | convertTo-json -Compress
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::copyProcessMessage) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+                 
 Add-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdMessage
+
+$msg = "Upload script execution completed."
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

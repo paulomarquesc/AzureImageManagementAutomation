@@ -49,7 +49,12 @@
     # Tier 0 Storage account deployment
     #-----------------------------------------------
 
-    $tier0SaName = [string]::Format("{0}tier0",(Get-ConfigValue $config.storage.tier0StorageAccount.storageAccountPrefix $config))
+    if ($config.storage.tier0StorageAccount.storageAccountName.ToString().startswith("^"))
+    {
+        throw "Tier 0 storage account name cannot be obtained by evaluation, it needs to be the full literal name"
+    }
+    $tier0SaName = $config.storage.tier0StorageAccount.storageAccountName
+
     $tier0StorageAccountRG = Get-ConfigValue $config.storage.tier0StorageAccount.resourceGroup $config
     $tier0StorageAccountLocation = Get-ConfigValue $config.storage.tier0StorageAccount.location $config
     $tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
@@ -147,7 +152,7 @@
 
     foreach ($t2Storage in $config.storage.tier2StorageAccounts)
     {
-        $saName = [string]::Format("{0}tier2",(Get-ConfigValue $t2Storage.storageAccountPrefix $config))
+        $saName = Get-ConfigValue $t2Storage.storageAccountName $config
 
         Write-Verbose "Adding $sname to configuration table" -Verbose
 
@@ -171,15 +176,17 @@
 
     foreach ($t2Storage in $config.storage.tier2StorageAccounts)
     {
-        $saName = [string]::Format("{0}tier2",(Get-ConfigValue $t2Storage.storageAccountPrefix $config))
+        $saName = Get-ConfigValue $t2Storage.storageAccountName $config
         Write-Verbose "Tier 2 Storage Account name $saname" -Verbose
-        $tier0subscriptionId = Get-ConfigValue $t2Storage.subscriptionId $config
-        Write-Verbose "Subscription $tier0subscriptionId" -Verbose
-        Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
+        $tier2subscriptionId = Get-ConfigValue $t2Storage.subscriptionId $config
+        Write-Verbose "Subscription $tier2subscriptionId" -Verbose
+        Select-AzureRmSubscription -SubscriptionId $tier2subscriptionId
 
-        Write-Verbose "Working on tier 2 storage account $saName at subscription $tier0subscriptionId" -Verbose
+        Write-Verbose "Working on tier 2 storage account $saName at subscription $tier2subscriptionId" -Verbose
         
         # create resource group for storage account if not found
+        # Waiting 10 seconds
+        Start-Sleep -Seconds 10
         $rg = Get-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.resourceGroup $config) -ErrorAction SilentlyContinue
         if ($rg -eq $null)
         {
@@ -188,19 +195,22 @@
         }
 
         # Create t2 storage account if needed
-        $saInfo = Find-AzureRmResource -ResourceNameEquals $saName -ResourceType Microsoft.Storage/storageAccounts -ResourceGroupNameEquals (Get-ConfigValue $t2Storage.resourceGroup $config)
-        if ($saInfo -eq $null)
-        {
-            if ((Get-AzureRmStorageAccountNameAvailability -Name $saName).NameAvailable)
-            {
-                # Create the storage account
-                New-AzureRmStorageAccount -ResourceGroupName (Get-ConfigValue $t2Storage.resourceGroup $config) -Name $saName -SkuName Standard_LRS -Location (Get-ConfigValue $t2Storage.location $config) -Kind Storage 
-            }
-            else
-            {
-                throw "Storage account name $saName already exists, please check name conventions in order to produce an available storage account name." 
-            }
-        }
+        # $saInfo = Find-AzureRmResource -ResourceNameEquals $saName -ResourceType Microsoft.Storage/storageAccounts -ResourceGroupNameEquals (Get-ConfigValue $t2Storage.resourceGroup $config)
+        # if ($saInfo -eq $null)
+        # {
+        #     if ((Get-AzureRmStorageAccountNameAvailability -Name $saName).NameAvailable)
+        #     {
+        #         # Create the storage account
+        #         New-AzureRmStorageAccount -ResourceGroupName (Get-ConfigValue $t2Storage.resourceGroup $config) -Name $saName -SkuName Standard_LRS -Location (Get-ConfigValue $t2Storage.location $config) -Kind Storage 
+        #     }
+        #     else
+        #     {
+        #         throw "Storage account name $saName already exists, please check name conventions in order to produce an available storage account name." 
+        #     }
+        # }
+
+        # Create the storage account
+        New-AzureRmStorageAccount -ResourceGroupName (Get-ConfigValue $t2Storage.resourceGroup $config) -Name $saName -SkuName Standard_LRS -Location (Get-ConfigValue $t2Storage.location $config) -Kind Storage 
     }
 
     #-------------------------------------------------------
@@ -351,7 +361,19 @@
     # Getting the authorization token
     Write-Verbose "Obtaining a token for the rest api calls against Azure AD" -Verbose
     $tenantName = Get-ConfigValue $config.general.tenantName $config
-    $token = Get-AzureRmImgMgmtAuthToken -TenantName $tenantName
+
+    $currentUserid = [Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier]::New((Get-AzureRmContext).Account.Id,[Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifierType]::RequiredDisplayableId)
+
+    if ($currentUserId.Id.Contains("@"))
+    {
+        # Based on UPN
+        $token = Get-AzureRmImgMgmtAuthToken -TenantName $tenantName -userId $currentUserId -promptBehavior ([Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Never)
+    }
+    else
+    {
+        # based on guid
+        $token = Get-AzureRmImgMgmtAuthToken -TenantName $tenantName -promptBehavior ([Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Auto)
+    }
 
     # Building Rest Api header with authorization token
     $authHeader = Get-AzureRmImgMgmtAuthHeader -AuthToken $token 
@@ -374,18 +396,18 @@
 
             foreach ($servicePrincipal in $servicePrincipalList)
             {
-                $roleAssignment = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -ErrorAction SilentlyContinue
+                $roleAssignment = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope -Scope "/subscriptions/$subscriptionId" -ErrorAction SilentlyContinue
                 if ($roleAssignment -eq $null)
                 {
                     Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
-                    New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor
+                    New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope -Scope "/subscriptions/$subscriptionId" -ErrorAction SilentlyContinue
                 }
             }
         }
     }
     else
     {
-    throw "Service principal $($mainAutomationAccount.ApplicationDisplayName) not found at Azure AD tenant $($tenantName)"
+        throw "Service principal $($mainAutomationAccount.ApplicationDisplayName) not found at Azure AD tenant $($tenantName)"
     }
 
     #--------------------------------

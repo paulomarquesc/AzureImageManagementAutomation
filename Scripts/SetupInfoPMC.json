@@ -1,9 +1,11 @@
 {
     "general":
     {
-        "tenantName":"tenantname.onmicrosoft.com",
+        "tenantName":"pmcglobal.onmicrosoft.com",
         "copyProcessQueueName":"copy-process-queue",
-        "imageCreationQueueName":"image-creation-process-queue"
+        "imageCreationQueueName":"image-creation-process-queue",
+        "jobTableName":"imageManagementJobs",
+        "jobLogTableName":"imageManagementJobLogs"
     },
     "requiredModulesToInstall":[
         "AzureRmStorageTable",
@@ -15,41 +17,40 @@
     {
         "tier0StorageAccount":
         {
-            "storageAccountPrefix":"pmcstorage77",
-            "resourceGroup":"imageprocess-rg",
-            "location":"westus2",
-            "subscriptionId":"af86d43c-d9b4-4b18-a1a4-1db9830c015a",
+            "comments":[
+                "PMC Subscription",
+                "For tier 0 storage account, select the region that will have most of the destination SAs",
+                "Also, for tier 0 storage account, use its full name instead of the [StorageAccountName] generated name",
+                "To change tier1Copies, this needs to be changed in the configuration table directly"
+            ],
+            "resourceGroup":"PMC-OS-Images-Solution-rg",
+            "storageAccountName":"pmcPMCosimgsa",
+            "location":"westus",
+            "subscriptionId":"<subscription id here>",
             "container":"vhds",
             "modulesContainer":"modules",
             "configurationTableName":"imageManagementConfiguration",
-            "tier1Copies":10
+            "tier1Copies":2
         },
         "tier2StorageAccounts":
         [
             {
-                "storageAccountPrefix":"pmcstorage77sub1",
+                "storageAccountName":"^([StorageAccountName]::new(\"pmcosimg\",[storageAccountTier]::tier2)).GetSaName($true)",
                 "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
                 "location":"^$config.storage.tier0StorageAccount.location",
                 "container":"^$config.storage.tier0StorageAccount.container",
                 "subscriptionId":"^$config.storage.tier0StorageAccount.subscriptionId"
-            },
-            {
-                "storageAccountPrefix":"pmcstorage77sub2",
-                "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
-                "location":"^$config.storage.tier0StorageAccount.location",
-                "container":"^$config.storage.tier0StorageAccount.container",
-                "subscriptionId":"c0d433f7-b5e8-441a-91b5-5db70c69d7b8"
             }
         ]
     },
     "automationAccount":
     {
         "subscriptionId":"^$config.storage.tier0StorageAccount.subscriptionId",
-        "applicationDisplayNamePrefix":"TestAutomationSP",
+        "applicationDisplayNamePrefix":"pmcPMCOSImg-SP",
         "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
         "location":"southcentralus",
-        "automationAccountNamePrefix":"ImageManagementAutomation",
-        "workerAutomationAccountsCount":2,
+        "automationAccountNamePrefix":"pmcPMCOSImg-AA",
+        "workerAutomationAccountsCount":1,
         "availableDedicatedCopyJobs":150,
         "maxDedicatedCopyJobs":150,
         "availableDedicatedImageCreationJobs":150,
@@ -95,7 +96,7 @@
                         },
                         {
                             "key":"ConfigStorageAccountName",
-                            "value":"^[string]::Format(\"{0}tier0\",$config.storage.tier0StorageAccount.storageAccountPrefix)"
+                            "value":"^$config.storage.tier0StorageAccount.storageAccountName"
                         },
                         {
                             "key":"ConfigurationTableName",
@@ -130,7 +131,7 @@
                         },
                         {
                             "key":"ConfigStorageAccountName",
-                            "value":"^[string]::Format(\"{0}tier0\",$config.storage.tier0StorageAccount.storageAccountPrefix)"
+                            "value":"^$config.storage.tier0StorageAccount.storageAccountName"
                         },
                         {
                             "key":"ConfigurationTableName",

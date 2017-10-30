@@ -16,6 +16,8 @@
         RunAs account to be used. 
     .EXAMPLE
 #>
+using module AzureRmImageManagement
+
 Param
 (
     [Parameter(Mandatory=$true)]
@@ -33,6 +35,8 @@ Param
     [Parameter(Mandatory=$false)]
     $connectionName="AzureRunAsConnection"
 )
+
+$ErrorActionPreference = "Stop"
 
 #
 # Runbook body
@@ -68,46 +72,88 @@ catch
 write-output "Selecting Tier 0 subscription $Tier0SubscriptionId" 
 Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 
-# TODO: instantiate log table
-#$logTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $logTableName
-
 # Getting the configuration table
 $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
+if ($configurationTable -eq $null)
+{
+    throw "Configuration table $configurationTableName could not be found at resourceGroup $ConfigStorageAccountResourceGroupName, Storage Account $configStorageAccountName, subscription $Tier0SubscriptionId"
+}
+
+# Getting the Job Log table
+$log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable 
+
 # Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD
-Write-Output "Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD" 
+$msg = "Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD"
+Write-Output $msg
+#Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 $tier0StorageAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable 
-# TODO: Implement log
 
 if ($tier0StorageAccount -eq $null)
 {
-    # TODO: Implement log
-    throw "System configuration table does not contain a configured tier 0 storage account which is where the VHD is uploaded from on-premises and starts the distribution process."
+    $msg = "System configuration table does not contain a configured tier 0 storage account which is where the VHD is uploaded from on-premises and starts the distribution process."
+    #Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
+}
+else
+{
+    $msg = "Tier 0 Storage account name: $($tier0StorageAccount.StorageAccountName)"
+    Write-Output $msg
+    #Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 }
 
 # Obtaining the tier 2 storage accounts that are the final destination of the VHDs 
-write-output "Obtaining the tier 2 storage accounts that are the final destination of the VHDs" 
+$msg = "Obtaining the tier 2 storage accounts that are the final destination of the VHDs" 
+Write-Output $msg
+#Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $tier2StorageAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
-# TODO: Implement log
+$msg = "Tier2 Storage Account count: $($tier2StorageAccountList.count)" 
+Write-Output $msg
+#Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 if ($tier2StorageAccountList -eq $null)
 {
     # TODO: Implement log
-    throw "System configuration table does not contain tier 2 storage accounts."
+    $msg = "System configuration table does not contain tier 2 storage accounts."
+    #Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
 }
 
-# Get a VHD to process
+# Getting copy process queue information
+$msg = "# Getting copy process queue information" 
+Write-Output $msg
+#Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $queueInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable 
+
+if ($queueInfo -eq $null)
+{
+    $msg = "Queue information could not be retrieved from configuration table"
+    #Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
+}
+else
+{
+    $msg = "Queue information -> resourceGroupName $($queueInfo.storageAccountResourceGroupName), storageAccountName $($queueInfo.storageAccountName), queueName $($queueInfo.copyProcessQueueName)"
+    #Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+}
 
 $copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccountResourceGroupName `
                                           -storageAccountName  $queueInfo.storageAccountName `
                                           -queueName $queueInfo.copyProcessQueueName
 
 # Getting source storage (tier0) account context
-Write-Verbose " Getting source storage (tier0) account context" -Verbose
+$msg = "Getting source storage (tier0) account context"
+Write-Output $msg
+#Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 $sourceContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccount.resourceGroupName -Name $tier0StorageAccount.storageAccountName).Context
+
+$msg = "Checking queue for a vhd to process"
+Write-Output $msg
+#Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $copyQueue
 
@@ -115,40 +161,63 @@ $exitMainLoop = $false
 
 while (($vhdToProcess -ne $null) -and !$exitMainLoop)
 {
-    write-output "processing message $($vhdToProcess.AsString)"
+    $msg = "Processing message from queue $($vhdToProcess.AsString)"
+    Write-Output $msg
+    #Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
     # Getting list of source blobs
     $vhdInfo = $vhdToProcess.AsString | ConvertFrom-Json
+    $jobid = $vhdInfo.JobId
+
+    $msg = "Getting list of source blobs"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
     $blobList = Get-AzureStorageBlob -Container vhd -Blob "$($vhdInfo.vhdName)-tier1*" -Context $sourceContext
+
+    $msg = "Tier 1 blob list count: $($blobList.count). Randomizing this list."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
     # Randomizing blob list
     $blobList = $blobList | Get-Random -Count $blobList.Count
 
     # Invoke a runbook copy process for each tier 2 storage
 
     # Start a copy runbook job for each tier 2 storage account
+    $msg = "Start a copy runbook job for each tier 2 storage account"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
     for ($i=0;$i -lt $tier2StorageAccountList.count;$i++)
     {
         $sourceBlobIndex = ($i % $blobList.count)
 
         try
         {
-            Write-Output "Getting available automation accounts"
-            Write-Output "Before getting the list - automation account count $($automationAccount.count)"
-            Write-Output -InputObject $automationAccount
+            $msg = "Getting available automation accounts"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
             $automationAccount = Get-AzureRmImgMgmtAvailableAutomationAccount -table $configurationTable -AutomationAccountType "copyDedicated" 
-            Write-Output "automation account count $($automationAccount.count)"
+
+            $msg = "Automation account count $($automationAccount.count)"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
         }
         catch
         {
             # An error occured, placing message back into the queue for later processing
             Update-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdToProcess -visibilityTimeout 0
-            write-output "There is no available automation account at this moment: `n$_"
+            
+            $msg = "An error occured getting available automation accounts or there are no available automation account at this moment: `n$_"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
             $exitMainLoop = $true
 
             break
         }
         
-        write-output "Start job for tier 2 storageaccount $($tier2StorageAccountList[$i].StorageAccountName) getting data from storage account $($blobList[$sourceBlobIndex].Context.StorageAccountName), blobName $($blobList[$sourceBlobIndex].Name))"  
-        write-output "Job will be started at $($automationAccount.automationAccountName)"  
+        $msg = "Start job for tier 2 storageaccount $($tier2StorageAccountList[$i].StorageAccountName) getting data from storage account $($blobList[$sourceBlobIndex].Context.StorageAccountName), blobName $($blobList[$sourceBlobIndex].Name))"  
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+        $msg = "Job will be started at $($automationAccount.automationAccountName)"
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
         # Parameters to be passed on to the runbook
         $params = @{"SourceStorageAccount"=$tier0StorageAccount;
@@ -161,20 +230,54 @@ while (($vhdToProcess -ne $null) -and !$exitMainLoop)
                     "ConfigurationTableName"=$ConfigurationTableName;
                     "AutomationAccountName"=$automationAccount.automationAccountName;
                     "Tier0SubscriptionId"=$tier0SubscriptionId}
-
-        Write-Output "Data being passed to Start-ImageManagementVhdCopyTier2 runbook:"
-        Write-Output -InputObject $automationAccount
-
-        Start-AzureRmAutomationRunbook -Name "Start-ImageManagementVhdCopyTier2" `
-                                              -Parameters $params `
-                                              -AutomationAccountName $automationAccount.automationAccountName `
-                                              -ResourceGroupName $automationAccount.resourceGroupName
         
-        write-output "Current available jobs for automation account $($automationAccount.availableJobsCount)"
+        $msg = "Data being passed to Start-ImageManagementVhdCopyTier2 runbook:"
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+            
+        $msg = $params | convertTo-json -Compress
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        
+        try
+        {
+            Start-AzureRmAutomationRunbook -Name "Start-ImageManagementVhdCopyTier2" `
+                -Parameters $params `
+                -AutomationAccountName $automationAccount.automationAccountName `
+                -ResourceGroupName $automationAccount.resourceGroupName
+        }
+        catch
+        {
+            $msg = "An error ocurred starting Start-ImageManagementVhdCopyTier2."
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+        
+            $msg = "Error Details: $_"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+        
+            throw $_
+        }
 
-        # Decrease availableJobs at the automation account
-        write-output "Updating automation account availability" 
-        Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $automationAccount -Decrease
+    
+        try
+        {
+            $msg = "Current available jobs for automation account $($automationAccount.availableJobsCount)"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+            # Decrease availableJobs at the automation account
+            $msg = "Decrease availableJobs at the automation account and Updating automation account availability"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+            Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $automationAccount -Decrease
+        }
+        catch
+        {
+            $msg = "An error ocurred updating the number of available jobs on automation accounts"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+        
+            $msg = "Error Details: $_"
+            Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+        
+            throw $_
+        }
+
     }
 
     # TODO: Implement Log for copy statuses
@@ -182,7 +285,13 @@ while (($vhdToProcess -ne $null) -and !$exitMainLoop)
     # Get next message in the queue
     if (!$exitMainLoop)
     {
+        $msg = "Checking queue for new vhd copy process job"
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
         Start-Sleep -Seconds 30
         $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $copyQueue
     }
 }
+
+$msg = "Runbook execution completed"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

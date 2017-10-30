@@ -20,6 +20,8 @@
         RunAs account to be used. 
     .EXAMPLE
 #>
+using module AzureRmImageManagement
+
 Param
 (
     [Parameter(Mandatory=$true)]
@@ -41,10 +43,18 @@ Param
     [string] $Tier0SubscriptionId,
 
     [Parameter(Mandatory=$false)]
-    $connectionName="AzureRunAsConnection"
+    $connectionName="AzureRunAsConnection",
+
+    [Parameter(Mandatory=$true)]
+    $jobId
 )
 
+$ErrorActionPreference = "Stop"
+
 # Variables
+$moduleName = "Start-ImageManagementTier1Distribution.ps1"
+
+Write-Output $moduleName
 
 Write-Output "Authenticating with connection $connectionName" 
 
@@ -76,38 +86,68 @@ catch
 Write-Output "Selecting Tier 0 subscription $Tier0SubscriptionId" 
 Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 
-# TODO: instantiate log table
-#$logTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $logTableName
-
 # Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD
 Write-Output "Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD" 
 $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
+if ($configurationTable -eq $null)
+{
+    throw "Configuration table $configurationTableName could not be found at resourceGroup $ConfigStorageAccountResourceGroupName, Storage Account $configStorageAccountName, subscription $Tier0SubscriptionId"
+}
+
+# Getting the Job Log table
+$log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable 
+
+$msg = "Obtaining the tier 0 storage account (the one that receives the vhd from on-premises)"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $tier0StorageAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable 
-# TODO: Implement log
 
 if ($tier0StorageAccount -eq $null)
 {
-    # TODO: Implement log
-    throw "System configuration table does not contain a configured tier 0 storage account which is where the VHD is uploaded from on-premises and starts the distribution process."
+    $msg = "System configuration table does not contain a configured tier 0 storage account which is where the VHD is uploaded from on-premises and starts the distribution process."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
+}
+else
+{
+    $msg = "Tier 0 Storage account name: $($tier0StorageAccount.StorageAccountName)"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 }
 
-Write-Output "Getting tier 0 storage account $($tier0StorageAccount.storageAccountName) context from resource group $($tier0StorageAccount.resourceGroupName)" 
+$msg = "Getting tier 0 storage account $($tier0StorageAccount.storageAccountName) context from resource group $($tier0StorageAccount.resourceGroupName)" 
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $sourceContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccount.resourceGroupName -Name $tier0StorageAccount.storageAccountName).Context
 if ($sourceContext -eq $null)
 {
-    throw "Context object could not be retrieved from tier 0 storage account $($tier0StorageAccount.storageAccountName) at resource group $($tier0StorageAccount.resourceGroupName)"
+    $msg = "Context object could not be retrieved from tier 0 storage account $($tier0StorageAccount.storageAccountName) at resource group $($tier0StorageAccount.resourceGroupName)"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw $msg
 }
 
+$msg = "Context successfuly obtained." 
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 # Start the copy process to tier 1 blobs
+$msg = "Starting the copy process to tier 1 blobs" 
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $pendingCopies = New-Object System.Collections.Generic.List[System.String]
 
 for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
 {
-    Write-Output "Starting tier 1 blob copy job on tier  0 storage account $($tier0StorageAccount.storageAccountName) - copy # $($i)" 
-    $destBlobName = [string]::Format("{0}-tier1-{1}",$VhdName,$i.ToString("000"))
+    $msg = "Starting tier 1 blob copy job on tier  0 storage account $($tier0StorageAccount.storageAccountName) - copy # $($i)" 
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
     
-    Start-AzureRmImgMgmtVhdCopy -sourceContainer $tier0StorageAccount.container `
+    $destBlobName = [string]::Format("{0}-tier1-{1}",$VhdName,$i.ToString("000"))
+
+    $msg = "Tier 1 blob name: $destBlobName "
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+    try
+    {
+        Start-AzureRmImgMgmtVhdCopy -sourceContainer $tier0StorageAccount.container `
         -sourceContext $sourceContext `
         -destContainer $tier0StorageAccount.container `
         -destContext $sourceContext `
@@ -115,36 +155,66 @@ for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
         -destBlobName  $destBlobName `
         -RetryWaitTime 30
  
-    $pendingCopies.Add($destBlobName)
+        $pendingCopies.Add($destBlobName)
+    
+    }
+    catch
+    {
+        $msg = "An error ocurred starting tier 1 copy from source blob $VhdName to destination blob $destBlobName on storage account $($sa.context.StorageAccountName)."
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+    
+        $msg = "Error Details: $_"
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    
+        throw $_
+    }
 }
 
 # Check completion status
+$msg = "Checking tier 1 copy completion status"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+   
 $passCount = 1
 
 while ($pendingCopies.count -gt 0)
 {
-    Write-Output "current status check pass $passcount, pending copies: $($pendingCopies.count)" 
-
+    $msg = "current status check pass $passcount, pending copies: $($pendingCopies.count)" 
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+       
     for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
     {
         $destBlobName = [string]::Format("{0}-tier1-{1}",$VhdName,$i.ToString("000"))
         if ($pendingCopies.Contains($destBlobName))
         {
-            $state = Get-AzureStorageBlobCopyState -Blob $destBlobName -Container $$tier0StorageAccount.container -Context $sourceContext
-
-            if ($state.Status -ne "pending")
+            try
             {
-                $pendingCopies.Remove($destBlobName)
+                $state = Get-AzureStorageBlobCopyState -Blob $destBlobName -Container $tier0StorageAccount.container -Context $sourceContext
+                
+                if ($state.Status -ne "pending")
+                {
+                    $pendingCopies.Remove($destBlobName)
+                    $msg = "Completed destination blobCopy: $destBlobName" 
+                    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1DistributionCopyConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+                }   
             }
+            catch
+            {
+                $msg = "An error ocurred during blobCopyState source status check on $destBlobName on storage account $($sourceContext.StorageAccountName) container $($tier0StorageAccount.container)."
+                Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+            
+                $msg = "Error Details: $_"
+                Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+                $pendingCopies.Remove($destBlobName)
+            
+                throw $_
+            }
+
         }
     }
     Start-Sleep $StatusCheckInterval
     $passCount++
-
-    # TODO: Implement timeout limit to avoid endless loop, throw exception for timeout to stop further processing also log the error
-
 }
 
-Write-Output "Tier 1 VHD copy succeeded" 
-
-# TODO: Implement Log for copy statuses
+$msg = "Tier 1 VHD copy process concluded" 
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

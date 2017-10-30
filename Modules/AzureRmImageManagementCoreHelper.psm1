@@ -13,6 +13,143 @@
 
 #Requires -Modules MSOnline, AzureRmStorageTable, AzureRmStorageQueue
 
+# Enums
+enum logLevel
+{
+    All
+    Informational
+    Warning
+    Error
+    Status
+}
+
+enum status
+{
+    NotStarted
+    InProgress
+    Completed
+}
+
+enum steps
+{
+    upload
+    tier1Distribution
+    tier2Distribution
+    imageCreation
+    copyProcessMessage
+    tier1DistributionCopyConcluded
+    tier2DistributionCopyConcluded
+    imgageCreationConcluded
+}
+
+enum storageAccountTier
+{
+    tier0
+    tier2
+    none
+}
+
+# # Classes
+# class JobStatus
+# {
+#     [int]$expectedItems=0
+#     [status]$uploadStatus=[status]::NotStarted
+#     [status]$tier1Distribution=[status]::NotStarted
+#     [status]$tier2Distribution=[status]::NotStarted
+#     [status]$imageCreation=[status]::NotStarted
+#     [dateTime]$uploadCompletionTimeUTC
+#     [dateTime]$tier1DistributionCompletionTimeUTC
+#     [dateTime]$tier2DistributionCompletionTimeUTC
+#     [double]$totalJobElapsedTime=0
+# }
+
+class StorageAccountName
+{
+    # usage example
+    # $saname = ([StorageAccountName]::new("pmcglobal",[storageAccountTier]::tier2)).GetSaName()
+
+    [string] $namePrefix = [string]::Empty
+    [storageAccountTier] $tier = [storageAccountTier]::none
+    [int] $padCount = 5
+    [int] $retries = 5
+
+    hidden [int] $_retryCount = 0
+
+    StorageAccountName() {}
+
+    StorageAccountName([string]$prefix) {
+        $this.namePrefix = $prefix
+    }
+
+    StorageAccountName([string]$prefix, [storageAccountTier] $saTier) {
+        $this.namePrefix = $prefix
+        $this.tier = $saTier
+    }
+
+    StorageAccountName([string]$prefix, [storageAccountTier] $saTier, [int]$padCount) {
+        $this.namePrefix = $prefix
+        $this.tier = $saTier
+        $this.padCount = $padCount
+    }
+
+    StorageAccountName([string]$prefix, [storageAccountTier] $saTier, [int]$padCount, [int]$retries) {
+        $this.namePrefix = $prefix
+        $this.tier = $saTier
+        $this.padCount = $padCount
+        $this.retries = $retries
+    }
+
+    hidden [string] _getName()
+    {
+        $rnd = get-random -Minimum 1 -Maximum 10000
+
+        if ($this.tier -ne [storageAccountTier]::none)
+        {
+            return ([string]::Format("{0}{1}{2}",$this.namePrefix,$rnd.toString().padleft($this.padCount,"0"),$this.tier))
+        }
+        else
+        {
+            return ([string]::Format("{0}{1}",$this.namePrefix,$rnd.toString().padleft($this.padCount,"0")))
+        }
+    }
+
+    hidden [object] _testName([string]$saName)
+    {
+        return (Get-AzureRmStorageAccountNameAvailability -Name $saName)
+    } 
+
+    [string] GetSaName([bool]$validateName) {
+        if ([string]::IsNullOrEmpty($this.namePrefix))
+        {
+            return $null
+        }
+        else
+        {
+            $saName = $this._getName()
+            
+            if ($validateName)
+            {
+                if ($this._testName($saName).NameAvailable -ne $true)
+                {
+                    do
+                    {
+                        $this._retryCount++ 
+                        $saName = $this._getName()
+                        
+                        if ($this._retryCount -gt $this.retries)
+                        {
+                            throw "Couldn't find an unused name for the storage account prefix $($this.namePrefix)"
+                        }
+                    }
+                    Until ($this._testName($saName).NameAvailable -eq $true)  
+                }
+            }
+
+            return $saName
+        }
+    }
+}
+
 # Module Functions
 
 function Wait-ModuleImport
@@ -361,15 +498,21 @@ function New-AzureRmImgMgmtAutomationAccount
         }
     }
 }
+
 function Get-AzureRmImgMgmtAuthToken
 {
     # Returns authentication token for Azure AD Graph API access
     param
     (
-            [Parameter(Mandatory=$true)]
-            $TenantName,
-            [Parameter(Mandatory=$false)]
-            $endPoint = "https://graph.windows.net" 
+        [Parameter(Mandatory=$true)]
+        $TenantName,
+        [Parameter(Mandatory=$false)]
+        $endPoint = "https://graph.windows.net",
+        [Parameter(Mandatory=$false)]
+        [Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier] $userId,
+        [Parameter(Mandatory=$false)]
+        [Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]$promptBehavior = [Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Never
+
     )
     
     $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" 
@@ -377,7 +520,15 @@ function Get-AzureRmImgMgmtAuthToken
     
     $authority = "https://login.windows.net/$TenantName"
     $authContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList $authority
-    $authResult = $authContext.AcquireToken($endPoint, $clientId,$redirectUri, "Auto")
+    
+    if ($userID -eq $null)
+    {
+        $authResult = $authContext.AcquireToken($endPoint, $clientId,$redirectUri, [Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Auto)
+    }
+    else
+    {
+        $authResult = $authContext.AcquireToken($endPoint, $clientId,$redirectUri, $promptBehavior,$userId)    
+    }
     
     return $authResult
 }
@@ -414,4 +565,192 @@ function Get-ConfigValue ($parameter,$config)
     }
     
     return $evaluatedValue
+}
+
+function Add-AzureRmImgMgmtLog
+{
+    param
+    (
+        [string]$jobId,
+        [steps]$step,
+        [string]$moduleName,
+        [string]$message,
+        [logLevel]$level,
+        [switch]$output,
+        $logTable
+    )
+
+    # Creating job submission information
+    $logEntryId = [guid]::NewGuid().Guid
+    [hashtable]$logProps = @{ "step"=$step.ToString();
+                              "moduleName"=$moduleName;
+                              "message"=$message;
+                              "logLevel"=$level.ToString()}
+
+    if (($level -eq [logLevel]::Error) -or ($level -eq [logLevel]::Informational) -or ($level -eq [logLevel]::Warning))
+    {
+        Add-AzureStorageTableRow -table $logTable -partitionKey $jobId -rowKey $logEntryId -property $logProps
+        if ($output)
+        {
+            write-output $msg
+        }
+    }  
+}
+
+function Add-AzureRmRmImgMgmtJob
+{
+    param
+    (
+        [string]$jobId,
+        [string]$description,
+        [string]$submissionDate,
+        $jobsTable
+    )
+
+    # Creating job submission information
+    [hashtable]$jobProps = @{ "description"=$description;
+                         "submissionDate"=$submissionDate}
+
+    $job = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'job') and (RowKey eq $jobId)" -table $jobProps
+
+    if ([string]::IsNullOrEmpty($job))
+    {
+        Add-AzureStorageTableRow -table $jobsTable -partitionKey "job" -rowKey $jobId -property $jobProps
+    }
+    else
+    {
+        throw "Job ID $jobId already exists, if you're updating a status, please use Update-AzureRmRmImgMgmtJob or make sure you remove the existing jobId from the table"    
+    }
+}
+
+# function Update-AzureRmRmImgMgmtJob
+# {
+#     param
+#     (
+#         [string]$jobId,
+#         [JobStatus]$status,
+#         $jobsTable
+#     )
+
+
+# }
+
+function Get-AzureRmImgMgmtLog
+{
+	<#
+	.SYNOPSIS
+		Gets log entries for a specified image process Job.
+	.DESCRIPTION
+		Gets log entries for a specified image process Job.
+    .PARAMETER ConfigFile
+        Setup config file that contains the configuration resource group, storage account and table name to access the logs.
+    .PARAMETER ConfigStorageAccountResourceGroupName
+        Resource Group name where the Azure Storage Account that contains the system configuration tables.
+    .PARAMETER ConfigStorageAccountName
+        Name of the Storage Account that contains the system configuration tables
+    .PARAMETER ConfigurationTableName
+        Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
+    .PARAMETER ConfigurationTable
+        Configuration table object.
+    .PARAMETER jobId
+        Job Id to perform the queries on.
+    .PARAMETER Level
+        This parameter is used to filter specific log levels, if it is defined as Error, only error entries will be part of the result.
+        If defined as All or null, all log entries for the specified job Id will be part of the result. This is based on LogLevel enumeration in the module. 
+        It can be used as string or as enumm if used as enum, make sure that you load the module with "using module AzureRmImageManagement" command before using the cmdlet so 
+        the enumeration gets loaded and you can refer to it as for example ([logLevel]::Error) in the cmdlet.
+    .PARAMETER Step
+        This parameter is used to filter by a specific step of the image process, e.g. upload. This is based on steps enumeration defined in the module. This is a similar
+        case of the Level parameter.
+	.EXAMPLE
+        Examples
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId fd1fab8c-c742-4285-b059-7c3a846c1643 
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId fd1fab8c-c742-4285-b059-7c3a846c1643 -Level ([loglevel]::informational)
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId fd1fab8c-c742-4285-b059-7c3a846c1643 -Level "informational"
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId fd1fab8c-c742-4285-b059-7c3a846c1643 -Level ([loglevel]::Error)
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId fd1fab8c-c742-4285-b059-7c3a846c1643 -Level ([loglevel]::Error) -step ([steps]::upload)
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId fd1fab8c-c742-4285-b059-7c3a846c1643 -step ([steps]::upload)
+         Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 -jobId e8b929f7-8fbd-493d-81af-14877b02f0e3  | sort -Property timestamp
+	#>
+    param(
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountResourceGroupName,
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountName,
+        
+        [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+        [AllowNull()]
+        [string]$ConfigurationTableName= "imageManagementConfiguration",
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+        $configurationTable,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$jobId,
+
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]    
+        [logLevel]$Level,
+
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]    
+        [steps]$step
+    )
+
+    if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
+    {
+        $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+    }
+  
+    # Getting appropriate log table
+    $logTableInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
+
+    if ($logTableInfo -eq $null)
+    {
+        throw "System configuration table does not contain configuartion item for job logging."
+    }
+
+    # Getting the Job Log table
+    $log = Get-AzureStorageTableTable -resourceGroup $logTableInfo.resourceGroupName -StorageAccountName $logTableInfo.storageAccountName -tableName $logTableInfo.jobLogTableName
+
+    $filter = "(PartitionKey eq '$jobId')" 
+    
+    if ($step -ne $null)
+    {
+        $filter = $filter + " and (step eq '$($step.ToString())')"
+    }
+
+    if ($level -ne $null)
+    {
+        if ($level -ne [logLevel]::All)
+        {
+            $filter = $filter + " and (logLevel eq '$($Level.ToString())')"
+        }
+    }
+
+    return (Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $log)
+
+}
+
+
+function Get-AzureRmImgMgmtLogTable
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        $configurationTable
+    )
+
+    # Getting appropriate job tables info
+    $jobTablesInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
+
+    if ($jobTablesInfo -eq $null)
+    {
+        throw "System configuration table does not contain configuartion item for job submission and logging."
+    }
+
+    # Getting the Job Log table
+    return (Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName)
+
 }
