@@ -19,7 +19,7 @@ Description = 'Sample PowerShell Module that contains core functions related to 
 HelpInfoUri = ''
 
 # Version number of this module
-ModuleVersion = '1.0.0.13'
+ModuleVersion = '1.0.0.15'
 
 # Minimum version of the Windows PowerShell engine required by this module
 PowerShellVersion = '5.0'
@@ -42,7 +42,8 @@ FunctionsToExport = @(  'Start-AzureRmImgMgmtVhdCopy',
                         'Get-ConfigValue',
                         'Add-AzureRmRmImgMgmtJob',
                         'Add-AzureRmImgMgmtLog',
-                        'Get-AzureRmImgMgmtLog')
+                        'Get-AzureRmImgMgmtLog',
+                        'Get-AzureRmImgMgmtLogTable')
 
 VariablesToExport = ''
 
