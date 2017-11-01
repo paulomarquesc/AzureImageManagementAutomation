@@ -19,3 +19,5 @@ For detailed information on how to setup and use this solution, please refer to 
 * Included code in setup.ps1 script to add the log configuration information to the configuration table
 * Setup.ps1 script now checks if the storage account was already created by looking at the "id" attribute of each storage account in the setupinfo.json file.
 * Created an auxiliary script called GenerateTier2StorageJson.ps1 that automatically generates the json section for the tier 2 storage accounts for a subscription and regions
+* Fixed a bug on Start-ImageManagementTier2Distribution related to a hard coded container  name
+* Changed the Image creation process to append the location at the end of the image name and delete the old image if it already exists

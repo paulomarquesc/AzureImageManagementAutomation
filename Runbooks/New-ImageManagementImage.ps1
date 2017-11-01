@@ -87,23 +87,28 @@ try
     $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -ErrorAction SilentlyContinue
     if ($rg -eq $null)
     {
-        Write-Output "Createing resource group $($vhdInfo.imageResourceGroup) at location $($vhdInfo.location)"
+        Write-Output "Creating resource group $($vhdInfo.imageResourceGroup) at location $($vhdInfo.location)"
         New-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -Location $vhdInfo.location
     }
 
+    # Appending location to the image name
+    $imageName = [string]::Format("{0}.{1}",$vhdInfo.imageName,$vhdInfo.location)
+
     # Check if image exists, create if not
     $image = Find-AzureRmResource -ResourceGroupName $vhdInfo.imageResourceGroup -Name $vhdInfo.imageName -ResourceType Microsoft.Compute/images
-    if ($image -eq $null)
+    if ($image -ne $null)
     {
-        Write-Output "Creating image $($vhdInfo.imageName)"
-        $imageConfig = New-AzureRmImageConfig -Location $vhdInfo.location
-        $imageConfig = Set-AzureRmImageOsDisk -Image $imageConfig -OsType $vhdInfo.osType -OsState Generalized -BlobUri $vhdInfo.vhdUri
-        New-AzureRmImage -ImageName $vhdInfo.imageName -ResourceGroupName $vhdInfo.imageResourceGroup -Image $imageConfig
+        Write-Output "Image $imageName already exists, deleting image."
+        Remove-AzureRmImage -ResourceGroupName $vhdInfo.imageResourceGroup -ImageName $imageName -Force
     }
-    else
-    {
-        Write-Output "Image $($vhdInfo.imageName) already exists"
-    }
+
+    Start-Sleep -Seconds 15 # Give some time for the platform replicate the change
+
+    Write-Output "Creating new image $imageName"
+    $imageConfig = New-AzureRmImageConfig -Location $vhdInfo.location
+    $imageConfig = Set-AzureRmImageOsDisk -Image $imageConfig -OsType $vhdInfo.osType -OsState Generalized -BlobUri $vhdInfo.vhdUri
+
+    New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imageResourceGroup -Image $imageConfig
 }
 catch
 {
