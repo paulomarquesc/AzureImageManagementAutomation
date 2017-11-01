@@ -172,7 +172,7 @@ while (($vhdToProcess -ne $null) -and !$exitMainLoop)
     $msg = "Getting list of source blobs"
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
     
-    $blobList = Get-AzureStorageBlob -Container vhd -Blob "$($vhdInfo.vhdName)-tier1*" -Context $sourceContext
+    $blobList = Get-AzureStorageBlob -Container $tier0StorageAccount.container -Blob "$($vhdInfo.vhdName)-tier1*" -Context $sourceContext
 
     $msg = "Tier 1 blob list count: $($blobList.count). Randomizing this list."
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
