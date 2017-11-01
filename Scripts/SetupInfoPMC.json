@@ -24,7 +24,7 @@
                 "To change tier1Copies, this needs to be changed in the configuration table directly"
             ],
             "resourceGroup":"PMC-OS-Images-Solution-rg",
-            "storageAccountName":"pmcPMCosimgsa",
+            "storageAccountName":"pmctier0sa01",
             "location":"westus",
             "subscriptionId":"<subscription id here>",
             "container":"vhds",
@@ -35,6 +35,15 @@
         "tier2StorageAccounts":
         [
             {
+                "id":"0",
+                "storageAccountName":"^([StorageAccountName]::new(\"pmcosimg\",[storageAccountTier]::tier2)).GetSaName($true)",
+                "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
+                "location":"^$config.storage.tier0StorageAccount.location",
+                "container":"^$config.storage.tier0StorageAccount.container",
+                "subscriptionId":"^$config.storage.tier0StorageAccount.subscriptionId"
+            },
+            {
+                "id":"1",
                 "storageAccountName":"^([StorageAccountName]::new(\"pmcosimg\",[storageAccountTier]::tier2)).GetSaName($true)",
                 "resourceGroup":"^$config.storage.tier0StorageAccount.resourceGroup",
                 "location":"^$config.storage.tier0StorageAccount.location",

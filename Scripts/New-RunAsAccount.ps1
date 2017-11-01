@@ -1,9 +1,9 @@
 ﻿# This script was downloaded from https://docs.microsoft.com/en-us/azure/automation/automation-update-account-powershell
+# Using Cert:\CurrentUser\My instead of Cert:\LocalMachine\my
 # Line 62 was changed from the original
 #   From: $KeyCredential = New-Object  Microsoft.Azure.Commands.Resources.Models.ActiveDirectory.PSADKeyCredential
 #   To: $KeyCredential = New-Object  Microsoft.Azure.Graph.RBAC.Version1_6.ActiveDirectory.PSADKeyCredential
 
-#Requires -RunAsAdministrator
 Param
 (
     [Parameter(Mandatory=$true)]
@@ -47,13 +47,13 @@ Param
 function CreateSelfSignedCertificate([string] $keyVaultName, [string] $certificateName, [string] $selfSignedCertPlainPassword,
                                 [string] $certPath, [string] $certPathCer, [string] $selfSignedCertNoOfMonthsUntilExpired )
 {
-    $Cert = New-SelfSignedCertificate -DnsName $certificateName -CertStoreLocation cert:\LocalMachine\My `
+    $Cert = New-SelfSignedCertificate -DnsName $certificateName -CertStoreLocation cert:\CurrentUser\My `
         -KeyExportPolicy Exportable -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" `
         -NotAfter (Get-Date).AddMonths($selfSignedCertNoOfMonthsUntilExpired)
 
     $CertPassword = ConvertTo-SecureString $selfSignedCertPlainPassword -AsPlainText -Force
-    Export-PfxCertificate -Cert ("Cert:\localmachine\my\" + $Cert.Thumbprint) -FilePath $certPath -Password $CertPassword -Force | Write-Verbose
-    Export-Certificate -Cert ("Cert:\localmachine\my\" + $Cert.Thumbprint) -FilePath $certPathCer -Type CERT | Write-Verbose
+    Export-PfxCertificate -Cert ("Cert:\CurrentUser\My\" + $Cert.Thumbprint) -FilePath $certPath -Password $CertPassword -Force | Write-Verbose
+    Export-Certificate -Cert ("Cert:\CurrentUser\My\" + $Cert.Thumbprint) -FilePath $certPathCer -Type CERT | Write-Verbose
  }
 
  function CreateServicePrincipal([System.Security.Cryptography.X509Certificates.X509Certificate2] $PfxCert, [string] $applicationDisplayName)

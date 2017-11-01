@@ -13,3 +13,7 @@ For detailed information on how to setup and use this solution, please refer to 
 * Implemented log UPloadVhd.ps1, Start-ImageManagementTier1Distribution.ps1 and Start-ImageManagementTier1Distribution.
 * Changed Get-AzureRmImgMgmtAuthToken to take an Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier object as parameter a parameter for promptBehavior which by default does not prompt anymore.
 * Due to a bug related to Get-AzureRmRoleAssignment, described on Github https://github.com/Azure/azure-powershell/issues/4828 issue, included a -SilentlyContinue at the line that applies RBAC (New-AzureRmRoleAssignment) on Setup.ps1. Will remove as soon as the fix gets into production.
+
+### Release 10/31/2017
+* New-RunAsAccount changed to don't require elevated privileges
+* Included code in setup.ps1 script to add the log configuration information to the configuration table
