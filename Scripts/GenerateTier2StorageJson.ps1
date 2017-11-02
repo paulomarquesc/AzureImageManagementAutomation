@@ -23,6 +23,9 @@
     Since this solution supports expansions, an unique Id for each storage account to be created is required, this is because the Setup.ps1 script checks this Id agains the Configuration Table,
     if this Id is there, the creation of that storage account will be skipped because that means that it was previously created. Best practice is to open the SetupInfoHON.json file,
     look at the tier2StorageAccounts section and look the last number used, add one to that number and then you will have the necessary sequence to just append to the file.
+.PARAMETER setupInfoFile
+    Points to the setup info file used by the Azure Image Management Automation solution, if this argument is passed, this script will update the file directly and place the additional
+    storage entries in the correct section. 
 .PARAMETER outputFile
     This is the JSON file containing the output for the storage accounts, as mentioned in the description, copy the contents to the correct section of the setup file and execute
     the setup script again in order to have the new storage accounts in the target regions and subcription.
@@ -42,10 +45,46 @@ param
     [Parameter(Mandatory=$true,ParameterSetName="subscriptionFile")]
     [string]$subscriptionListFile,
 
+    [Parameter(Mandatory=$false)]
+    [string]$setupInfoFile,
+
     [string[]]$regionList,
-    [int]$startingIdNumber,
+    
+    [Parameter(Mandatory=$false)]
+    [int]$startingIdNumber=-1,
+
     [string]$outputFile = "onboardStorageAccounts.json"
 )
+
+function createStorageAccountEntry
+{
+    param
+    (
+        [string]$id,
+        [string]$region,
+        [string]$subscriptionId
+    )
+
+    return New-Object -typename PSObject -Property @{"id"="$id";
+                "storageAccountName"='^([StorageAccountName]::new("honosimg",[storageAccountTier]::tier2)).GetSaName($true)';
+                "resourceGroup"='^$config.storage.tier0StorageAccount.resourceGroup';
+                "location"=$region;
+                "container"='^$config.storage.tier0StorageAccount.container';
+                "subscriptionId"="$subscriptionId"}
+
+}
+
+if ($setupInfoFile -ne $null)
+{
+    if (!(Test-Path $setupInfoFile))
+    {
+        throw "Setup information $setupInfoFile file not found."
+    }
+
+    $outputFileName = [string]::Format("{0}.New-{1}{2}",[system.io.Path]::GetFileNameWithoutExtension($setupInfoFile),(get-date -Format s).tostring().replace(":","_"),[system.io.Path]::GetExtension($setupInfoFile))
+    $outputFile = join-path -path ([system.io.Path]::GetDirectoryName($setupInfoFile)) $outputFileName
+
+}
 
 $onboardStorageAccounts = @()
 
@@ -55,13 +94,15 @@ switch ($PSCmdlet.ParameterSetName)
     {
         foreach ($region in $regionList)
         {
-            $onboardStorageAccounts += New-Object -typename PSObject -Property @{"id"="$startingIdNumber";
-                                                                                    "storageAccountName"='^([StorageAccountName]::new(\"honosimg\",[storageAccountTier]::tier2)).GetSaName($true)';
-                                                                                    "resourceGroup"='^$config.storage.tier0StorageAccount.resourceGroup';
-                                                                                    "location"=$region;
-                                                                                    "container"='^$config.storage.tier0StorageAccount.container';
-                                                                                    "subscriptionId"="$subscriptionId"}
-            $startingIdNumber += 1
+            if ($startingIdNumber -gt -1)
+            {
+                $onboardStorageAccounts += createStorageAccountEntry -id $startingIdNumber -region $region -subscriptionId $subscriptionId
+                $startingIdNumber += 1
+            }
+            else
+            {
+                $onboardStorageAccounts += createStorageAccountEntry -id ([guid]::NewGuid().Guid) -region $region -subscriptionId $subscriptionId   
+            }
         }
     }
 
@@ -78,17 +119,33 @@ switch ($PSCmdlet.ParameterSetName)
         {
             foreach ($region in $regionList)
             {
-                $onboardStorageAccounts += New-Object -typename PSObject -Property @{"id"="$startingIdNumber";
-                                                                                     "storageAccountName"='^([StorageAccountName]::new(\"honosimg\",[storageAccountTier]::tier2)).GetSaName($true)';
-                                                                                     "resourceGroup"='^$config.storage.tier0StorageAccount.resourceGroup';
-                                                                                     "location"=$region;
-                                                                                     "container"='^$config.storage.tier0StorageAccount.container';
-                                                                                     "subscriptionId"="$sub"}
-                $startingIdNumber += 1
+                if ($startingIdNumber -gt -1)
+                {
+                    $onboardStorageAccounts += createStorageAccountEntry -id $startingIdNumber -region $region -subscriptionId $sub
+                    $startingIdNumber += 1
+                }
+                else
+                {
+                    $onboardStorageAccounts += createStorageAccountEntry -id ([guid]::NewGuid().Guid) -region $region -subscriptionId $sub   
+                }
             }
         }
     }
 }
 
+if ([string]::IsNullOrEmpty($setupInfoFile))
+{
+    $onboardStorageAccounts | ConvertTo-Json  | Out-File $outputFile
+}
+else
+{
+    $config = Get-Content $setupInfoFile -Raw | ConvertFrom-Json
 
-$onboardStorageAccounts | ConvertTo-Json  | % {$_.replace("\\\","\")} | Out-File $outputFile
+    foreach ($storage in $onboardStorageAccounts)
+    {
+        $config.storage.tier2StorageAccounts += $storage
+    }
+
+    # Generating a new SetupInfo file
+    $config | ConvertTo-Json -Depth 99 | Out-File $outputFile
+}
