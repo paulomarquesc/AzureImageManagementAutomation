@@ -64,6 +64,8 @@ Param
     [String] $Tier0SubscriptionId
 )
 
+$ErrorActionPreference = "Stop"
+
 #
 # Runbook body
 #
@@ -105,11 +107,18 @@ if ($sourceContext -eq $null)
 }
 
 # Getting destination context
-Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId
-$destContext = (Get-AzureRmStorageAccount -ResourceGroupName $DestinationStorageAccount.resourceGroupName -Name $DestinationStorageAccount.storageAccountName).Context
-if ($destContext -eq $null)
+try
 {
-    throw throw "Context object could not be retrieved from destination storage account $($DestinationStorageAccount.storageAccountName) at resource group $($DestinationStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
+    Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId # TODO: Can fail here
+    $destContext = (Get-AzureRmStorageAccount -ResourceGroupName $DestinationStorageAccount.resourceGroupName -Name $DestinationStorageAccount.storageAccountName).Context
+    if ($destContext -eq $null)
+    {
+        throw "Context object could not be retrieved from destination storage account $($DestinationStorageAccount.storageAccountName) at resource group $($DestinationStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
+    }
+}
+catch
+{
+    throw "An error occured selecting the destination subscription or getting the storage context.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
 }
 
 # Check container and create if does not exist

@@ -33,6 +33,8 @@ Param
     $connectionName="AzureRunAsConnection"
 )
 
+$ErrorActionPreference = "Stop"
+
 #
 # Runbook body
 #

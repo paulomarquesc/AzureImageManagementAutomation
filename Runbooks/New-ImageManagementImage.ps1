@@ -44,6 +44,8 @@ Param
     [String] $Tier0SubscriptionId
 )
 
+$ErrorActionPreference = "Stop"
+
 #
 # Runbook body
 #
@@ -79,10 +81,10 @@ $vhdInfo = $VhdDetails | ConvertFrom-Json
 
 Write-Output -InputObject $vhdInfo
 
-Select-AzureRmSubscription -SubscriptionId $vhdInfo.subscriptionId
-
 try
 {
+    Select-AzureRmSubscription -SubscriptionId $vhdInfo.subscriptionId
+    
     # Check if resource group exists, create if not
     $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -ErrorAction SilentlyContinue
     if ($rg -eq $null)
@@ -112,7 +114,7 @@ try
 }
 catch
 {
-    throw $_
+    throw "An error occured trying to create an image. VhdDetails: $VhdDetails.`nError: $_"
 }
 
 # Selecting tier 0 subscription
