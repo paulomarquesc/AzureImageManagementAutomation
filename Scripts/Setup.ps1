@@ -141,7 +141,7 @@ if ($container -eq $null)
 }
 
 # Generate the SAS token
-$sasToken = New-AzureStorageContainerSASToken -Container (Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config) -Context $tier0StorageAccountContext -Permission r -ExpiryTime (Get-Date).AddDays(30))
+$sasToken = New-AzureStorageContainerSASToken -Container (Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config) -Context $tier0StorageAccountContext -Permission r -ExpiryTime (Get-Date).AddDays(30)
 
 foreach ($module in $config.requiredModulesToInstall)
 {
