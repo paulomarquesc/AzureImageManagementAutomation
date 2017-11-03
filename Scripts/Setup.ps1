@@ -446,7 +446,7 @@ if ($servicePrincipalList -ne $null)
             if ($roleAssignment -eq $null)
             {
                 Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
-                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope "/subscriptions/$subscriptionId" -ErrorAction SilentlyContinue
+                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope "/subscriptions/$subscriptionId" -ErrorAction SilentlyContinue
             }
         }
     }

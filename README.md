@@ -21,3 +21,9 @@ For detailed information on how to setup and use this solution, please refer to 
 * Created an auxiliary script called GenerateTier2StorageJson.ps1 that automatically generates the json section for the tier 2 storage accounts for a subscription and regions
 * Fixed a bug on Start-ImageManagementTier2Distribution related to a hard coded container  name
 * Changed the Image creation process to append the location at the end of the image name and delete the old image if it already exists
+
+### Release 11/03/2017
+* Updated SetupInfo.Json file.
+* Replaced dependency on MSOnline to AzureAD module 
+* Adding erroraction=stop to runbooks and improved an error message on new-imagemanagementimage and start-imagemanagementtier2distribution
+* Implemented a capability of this script to change the setup file directly
