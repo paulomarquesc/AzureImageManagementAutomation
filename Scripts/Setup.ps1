@@ -20,7 +20,7 @@
 .NOTES
 #>
 
-#Requires -Modules MSOnline, AzureRmImageManagement
+#Requires -Modules AzureAD, AzureRmImageManagement
 
 param
 (
@@ -141,7 +141,7 @@ if ($container -eq $null)
 }
 
 # Generate the SAS token
-$sasToken = New-AzureStorageContainerSASToken -Container (Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config) -Context $tier0StorageAccountContext -Permission r -ExpiryTime (Get-Date).AddHours(8)
+$sasToken = New-AzureStorageContainerSASToken -Container (Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config) -Context $tier0StorageAccountContext -Permission r -ExpiryTime (Get-Date).AddDays(30))
 
 foreach ($module in $config.requiredModulesToInstall)
 {
@@ -362,6 +362,40 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
     }
 }
 
+#--------------------------------
+# Creating queues
+#--------------------------------
+
+Write-Verbose "Selecting tier 0 subscription $(Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config)" -Verbose
+$tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
+Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
+
+$result = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable
+
+if ($result -eq $null)
+{
+    [hashtable]$QueueProperties = @{ "storageAccountResourceGroupName"=Get-ConfigValue $config.storage.tier0StorageAccount.resourceGroup $config;
+                                    "storageAccountName"=$tier0SaName;
+                                    "copyProcessQueueName"=Get-ConfigValue $config.general.copyProcessQueueName $config;
+                                    "imageCreationQueueName"=Get-ConfigValue $config.general.imageCreationQueueName $config;
+                                    "location"=Get-ConfigValue $config.storage.tier0StorageAccount.location $config}
+
+    Write-Verbose "Creating queue $($QueueProperties.copyProcessQueueName)" -Verbose
+    Get-AzureRmStorageQueueQueue -resourceGroup $QueueProperties.storageAccountResourceGroupName `
+                                    -storageAccountName  $QueueProperties.storageAccountName `
+                                    -queueName $QueueProperties.copyProcessQueueName
+
+    Write-Verbose "Creating queue $($QueueProperties.imageCreationQueueName)" -Verbose
+    Get-AzureRmStorageQueueQueue -resourceGroup $QueueProperties.storageAccountResourceGroupName `
+                                    -storageAccountName  $QueueProperties.storageAccountName `
+                                    -queueName $QueueProperties.imageCreationQueueName
+
+                                Write-Verbose "Adding queue information into the configuration table" -Verbose
+    Add-AzureStorageTableRow -table $configurationTable -partitionKey "queueConfig" -rowKey ([guid]::NewGuid().guid) -property $QueueProperties
+}
+
+Write-Verbose "End of script execution" -Verbose
+
 #------------------------------------------------------------------------------------------------------------------------
 # Assign service principal contributor of the t2 involved subscriptions
 # Note: To perform this initial assigment the user executing this setup script must be owner of all t2 subscriptions
@@ -421,38 +455,3 @@ else
 {
     throw "Service principal $($mainAutomationAccount.ApplicationDisplayName) not found at Azure AD tenant $($tenantName)"
 }
-
-#--------------------------------
-# Creating queues
-#--------------------------------
-
-Write-Verbose "Selecting tier 0 subscription $(Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config)" -Verbose
-$tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
-Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
-
-$result = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable
-
-if ($result -eq $null)
-{
-    [hashtable]$QueueProperties = @{ "storageAccountResourceGroupName"=Get-ConfigValue $config.storage.tier0StorageAccount.resourceGroup $config;
-                                    "storageAccountName"=$tier0SaName;
-                                    "copyProcessQueueName"=Get-ConfigValue $config.general.copyProcessQueueName $config;
-                                    "imageCreationQueueName"=Get-ConfigValue $config.general.imageCreationQueueName $config;
-                                    "location"=Get-ConfigValue $config.storage.tier0StorageAccount.location $config}
-
-    Write-Verbose "Creating queue $($QueueProperties.copyProcessQueueName)" -Verbose
-    Get-AzureRmStorageQueueQueue -resourceGroup $QueueProperties.storageAccountResourceGroupName `
-                                    -storageAccountName  $QueueProperties.storageAccountName `
-                                    -queueName $QueueProperties.copyProcessQueueName
-
-    Write-Verbose "Creating queue $($QueueProperties.imageCreationQueueName)" -Verbose
-    Get-AzureRmStorageQueueQueue -resourceGroup $QueueProperties.storageAccountResourceGroupName `
-                                    -storageAccountName  $QueueProperties.storageAccountName `
-                                    -queueName $QueueProperties.imageCreationQueueName
-
-                                Write-Verbose "Adding queue information into the configuration table" -Verbose
-    Add-AzureStorageTableRow -table $configurationTable -partitionKey "queueConfig" -rowKey ([guid]::NewGuid().guid) -property $QueueProperties
-}
-
-Write-Verbose "End of script execution" -Verbose
-
