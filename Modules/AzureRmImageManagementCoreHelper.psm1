@@ -404,7 +404,7 @@ function New-AzureRmImgMgmtAutomationAccount
         $config
     )
 
-    Write-Verbose "Creating main automation account $automationAccountName in resource group $resourceGroupName" -Verbose
+    Write-Verbose "Creating automation account $automationAccountName in resource group $resourceGroupName" -Verbose
     if ($basicTier)
     {
         New-AzurermAutomationAccount -Name $automationAccountName -ResourceGroupName $resourceGroupName -Location $location -Plan Basic

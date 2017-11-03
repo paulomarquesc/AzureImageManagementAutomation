@@ -72,7 +72,7 @@ function CreateSelfSignedCertificate([string] $keyVaultName, [string] $certifica
     # Use key credentials and create an Azure AD application
     $Application = New-AzureRmADApplication -DisplayName $ApplicationDisplayName -HomePage ("http://" + $applicationDisplayName) -IdentifierUris ("http://" + $KeyId) -KeyCredentials $KeyCredential
     $ServicePrincipal = New-AzureRMADServicePrincipal -ApplicationId $Application.ApplicationId
-    $GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
+    #$GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
 
     # Sleep here for a few seconds to allow the service principal application to become active (ordinarily takes a few seconds)
     Sleep -s 15

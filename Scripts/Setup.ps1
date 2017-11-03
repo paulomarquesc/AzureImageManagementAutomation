@@ -28,9 +28,7 @@ param
     [string]$configFile = (Join-Path $PSScriptRoot "SetupInfo.json")
 )
 
-#-----------------------------------------------
-# Main
-#-----------------------------------------------
+#region Gathering Information
 $ErrorActionPreference = "Stop"
 
 if (!(test-path $configFile))
@@ -60,8 +58,9 @@ $tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subsc
 
 Write-Verbose "Selecting main (tier0) subscription $tier0subscriptionId"
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
+#endregion
 
-# Check if resource group exists, create if not
+#region Check if resource group exists, create if not 
 Write-Verbose "Checking if resource group exists, create it if not." -Verbose
 $rg = Get-AzureRmResourceGroup -Name $tier0StorageAccountRG -ErrorAction SilentlyContinue
 if ($rg -eq $null)
@@ -85,8 +84,9 @@ if ($saInfo -eq $null)
         throw "Storage account name $tier0SaName already exists, please check name conventions in order to produce an available storage account name." 
     }
 }
+#endregion
 
-# Adding information to the configuration table
+#region Adding information to the configuration table
 
 Write-Verbose "Adding Tier 0 Information in the configuration table $(Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)"
 
@@ -109,9 +109,9 @@ if ($tier0StorageItem -eq $null)
     Add-AzureStorageTableRow -table $configurationTable -partitionKey "storage" -rowKey ([guid]::NewGuid().guid) -property $tier0StorageProperties 
 }
 
-#--------------------------------
-# Adding log configuration
-#--------------------------------
+#endregion
+
+#region Adding log configuration
 Write-Verbose "Adding log configuration Information in the configuration table $(Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)"
 
 $logConfigurationInformation = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
@@ -126,9 +126,9 @@ if ($logConfigurationInformation -eq $null)
 
     Add-AzureStorageTableRow -table $configurationTable -partitionKey "logConfiguration" -rowKey ([guid]::NewGuid().guid) -property $logInfoProps 
 }
+#endregion
 
-
-# Downloading required modules from PowerShell Gallery and uploading to configuration storage account
+#region Downloading required modules from PowerShell Gallery and uploading to configuration storage account
 Write-Verbose "Downloading required modules from PowerShell Gallery and uploading to configuration storage account" -Verbose
 
 $tier0StorageAccountContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccountRG -Name $tier0SaName).Context
@@ -158,11 +158,9 @@ foreach ($module in $config.requiredModulesToInstall)
     Write-Verbose "Uploading module to tier 0 storage account $tier0SaName" -Verbose
     Set-AzureStorageBlobContent -File $ArchiveFile -Blob "$module.zip" -Container (Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config) -Context $tier0StorageAccountContext -Force
 }
+#endregion
 
-#-----------------------------------------------------
-# Tier 2 storage setup - On each Tier 1 subscription
-#-----------------------------------------------------
-
+#region Tier 2 storage setup - On each Tier 1 subscription
 Write-Verbose "Tier 2 storage setup - On each Tier 1 subscription" -Verbose
 
 Select-AzureRmSubscription -SubscriptionId (Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config)
@@ -224,11 +222,9 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
         Write-Verbose "Tier 2 Storage id $($t2Storage.id) in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId) already exists"    
     }
 }
+#endregion
 
-#-------------------------------------------------------
-# Setting up Main Automation Account and RunAs Accounts
-#-------------------------------------------------------
-
+#region Setting up Main Automation Account and RunAs Accounts
 Write-Verbose "Setting up Main Automation Account and RunAs Account" -Verbose
 $tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
@@ -268,9 +264,9 @@ if ($result -eq $null)
 
     Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $mainAutomationAccountProps 
 }
+#endregion
 
-
-# Adding Copy Process automation account(s)
+#region Adding Copy Process automation account(s)
 Write-Verbose "Setting up Copy Process Automation Account(s) and RunAs Account(s)" -Verbose
 
 for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAccountsCount $config);$i++)
@@ -315,8 +311,9 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
         Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $copyAutomationAccountProps 
     }
 }
+#endregion
 
-# Adding Image Creation Process automation account(s)
+#region Adding Image Creation Process automation account(s)
 Write-Verbose "Setting up Image Creation Process Automation Account(s) and RunAs Account(s)" -Verbose
 
 for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAccountsCount $config);$i++)
@@ -361,11 +358,9 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
         Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $imgAutomationAccountProps 
     }
 }
+#endregion
 
-#--------------------------------
-# Creating queues
-#--------------------------------
-
+#region Creating queues
 Write-Verbose "Selecting tier 0 subscription $(Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config)" -Verbose
 $tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
@@ -393,13 +388,11 @@ if ($result -eq $null)
                                 Write-Verbose "Adding queue information into the configuration table" -Verbose
     Add-AzureStorageTableRow -table $configurationTable -partitionKey "queueConfig" -rowKey ([guid]::NewGuid().guid) -property $QueueProperties
 }
+#endregion
 
-Write-Verbose "End of script execution" -Verbose
-
-#------------------------------------------------------------------------------------------------------------------------
-# Assign service principal contributor of the t2 involved subscriptions
+#region Assign service principal contributor of the t2 involved subscriptions
 # Note: To perform this initial assigment the user executing this setup script must be owner of all t2 subscriptions
-#------------------------------------------------------------------------------------------------------------------------
+
 Write-Verbose "Getting main automation account information from storage table..." -Verbose
 $mainAutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'automationAccount') and (type eq 'main')" -table $configurationTable
 
@@ -455,3 +448,6 @@ else
 {
     throw "Service principal $($mainAutomationAccount.ApplicationDisplayName) not found at Azure AD tenant $($tenantName)"
 }
+#endregion
+
+Write-Verbose "Setup completed with success" -Verbose

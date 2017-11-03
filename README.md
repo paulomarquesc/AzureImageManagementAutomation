@@ -27,3 +27,5 @@ For detailed information on how to setup and use this solution, please refer to 
 * Replaced dependency on MSOnline to AzureAD module 
 * Adding erroraction=stop to runbooks and improved an error message on new-imagemanagementimage and start-imagemanagementtier2distribution
 * Implemented a capability of this script to change the setup file directly
+* Commented line that contains $GetServicePrincipal on script New-RunAsAccount.ps1 because it is unecessary
+* Included #region statements on setup.ps1 script to unclutter it
