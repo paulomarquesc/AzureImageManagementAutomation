@@ -11,7 +11,7 @@
 .NOTES
 #>
 
-#Requires -Modules MSOnline, AzureRmStorageTable, AzureRmStorageQueue
+#Requires -Modules AzureAD, AzureRmStorageTable, AzureRmStorageQueue
 
 # Enums
 enum logLevel
