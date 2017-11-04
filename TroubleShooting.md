@@ -24,43 +24,43 @@ $jobsLogTableName = "imageManagementJobLogs"
 	2.2) Run the following cmdlets to get the list of jobs from Powershell
 		
 ```powershell
-		$jobTable = Get-AzureStorageTableTable -ResourceGroup $configStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $jobsTableName
-		Get-AzureStorageTableRowAll -table $jobTable
+$jobTable = Get-AzureStorageTableTable -ResourceGroup $configStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $jobsTableName
+Get-AzureStorageTableRowAll -table $jobTable
 ```
 
 2) Store the rowKey attribute value from the job you wish to restart the tier 2 process, in this example I have the following value:
 
-	```powershell
-	$jobId = "82cb707e-91a5-4c9e-a24f-719971d27109"
-	```
+```powershell
+$jobId = "82cb707e-91a5-4c9e-a24f-719971d27109"
+```
 
 3) Run the following command line and copy the content of the message that starts with {jobId:
 	
 ```powershell
-	$log = Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName $configStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -jobId $jobId | select rowkey,message | ? { $_.message -like ('*jobId":*')}
-	
-	$log
+$log = Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName $configStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -jobId $jobId | select rowkey,message | ? { $_.message -like ('*jobId":*')}
 
+$log
 ```
 
 	Output Example:
 
 
-	| RowKey | message |
-	| --- | --- |
-	| 8057f39a-e6c8-43c0-8421-eec416e206df | {"jobId":"82cb707e-91a5-4c9e-a24f-719971d27109","imageResourceGroupName":"Images-RG01","imageName":"WinServerCore2016-Img01","osType":"Windows","vhdName":"WinServerCore2016-OsDisk.vhd"} |
-	| 92410572-c00f-4a2e-be89-d884c28613d0 | Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters: {"jobId":"82cb707e-91a5-4c9e-a24f-719971d27109","Tier0SubscriptionId":"4a49ea85-ce71-4800-b854-5d18e557921e","ConfigStorageAccountName":"pmctier0sa01","ConfigStorageAccountResourceGroupName":"PMC-OS-Images... |
+| RowKey | message |
+| --- | --- |
+| 8057f39a-e6c8-43c0-8421-eec416e206df | {"jobId":"82cb707e-91a5-4c9e-a24f-719971d27109","imageResourceGroupName":"Images-RG01","imageName":"WinServerCore2016-Img01","osType":"Windows","vhdName":"WinServerCore2016-OsDisk.vhd"} |
+| 92410572-c00f-4a2e-be89-d884c28613d0 | Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters: {"jobId":"82cb707e-91a5-4c9e-a24f-719971d27109","Tier0SubscriptionId":"4a49ea85-ce71-4800-b854-5d18e557921e","ConfigStorageAccountName":"pmctier0sa01","ConfigStorageAccountResourceGroupName":"PMC-OS-Images... |
 
 4) Copy the contents of message attribute that starts with "{jobId"
 	
 	In this example the content to be copied is:
+
 	{"jobId":"82cb707e-91a5-4c9e-a24f-719971d27109","imageResourceGroupName":"Images-RG01","imageName":"WinServerCore2016-Img01","osType":"Windows","vhdName":"WinServerCore2016-OsDisk.vhd"}
 
 	If you want to store the message content in a variable, identify which line (starts with 0) and assign to a variable, for example:
 	
-	```powershell
-	$queueMessage = $log[0].message
-	```
+```powershell
+$queueMessage = $log[0].message
+```
 
 5) Place this content in the queue using azure Storage Explorer or Powershell and wait or restart the Start-ImageManagementTier2Distribution using the same values for the paramters from the failed job.
 
@@ -76,6 +76,7 @@ High level steps to start querying:
 3) Execute the log query cmdlet, in this example we are querying 
 
 Code
+
 ```powershell
 # Sign in
 Add-AzureRmAccount
@@ -98,3 +99,43 @@ $jobId= "<row key of the job you want to query>"
 # Run the query cmdlet
 Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName $configStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -jobId $jobId -Level All -step tier2Distribution | sort timestamp | select timestamp,step,message
 ```
+
+Setup.ps1 script intermitently get the Connection AzureRunAsConnection with a wrong Application Id with value System.Object[]
+-----------------------------------------------------------------------------------------------------------------------------
+
+Setup.ps1 script may generate issues in the Automation Accounts and the initial Update runbook will fail due to Connections on the Automation Account may be generating random System.Object[] application id instead of the real application ID.
+Workaround today is:
+* Go to the Automation Account that has the Update-ModulesInAutomationToLatestVersion runbook job failed
+* Go to Connections, click on “AzureRunAsConnection”
+* Check the field “ApplicationID”
+* If the content looks like: System.Object[] please follow these steps to obtain the Application ID:
+* On your Setup Info json file, get the value of automationAccount. applicationDisplayNamePrefix (e.g. pmcPMCOSImg-SP)
+* Using Portal
+* * Take note of the Automation Account Name (e.g. pmcPMCOSImg-AA-Copy001) 
+* * Go to Azure AD
+* * Click on App Registrations
+* * In the “Search by name or AppId”, paste the value obtained on the first step
+* * Click in the Application that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
+* * Copy the value of Application ID
+* * Go back to your automation account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
+* Partially Using PowerShell
+* * Take note of the Automation Account Name (e.g. pmcPMCOSImg-AA-Copy001) 
+* * Open Powershell and execute the following cmdlets
+
+```powershell
+Connect-AzureAD
+$appDisplayName = “<value obtained on first step>”
+Get-AzureAdServicePrincipal -SearchString $appDisplayName
+```
+
+* * This will output your service principals created by the setup scripts:
+
+```
+ObjectId                             AppId                                DisplayName
+--------                             -----                                -----------
+8573b393-d34d-4c50-8693-a4a310ca287b c812c395-57f7-425a-9623-de54cf1087f3 pmcPMCOSImg-SP
+4fe21ffc-6235-4f2c-835a-fb5261753953 57f526fe-f655-43f1-9dd1-0e54b5326401 pmcPMCOSImg-SP-Copy001
+```
+
+* * Copy the Application ID that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
+* * In the portal, go to your Automation Account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
