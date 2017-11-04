@@ -72,15 +72,20 @@ function CreateSelfSignedCertificate([string] $keyVaultName, [string] $certifica
     # Use key credentials and create an Azure AD application
     $Application = New-AzureRmADApplication -DisplayName $ApplicationDisplayName -HomePage ("http://" + $applicationDisplayName) -IdentifierUris ("http://" + $KeyId) -KeyCredentials $KeyCredential
     $ServicePrincipal = New-AzureRMADServicePrincipal -ApplicationId $Application.ApplicationId
-    #$GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
 
-    # Sleep here for a few seconds to allow the service principal application to become active (ordinarily takes a few seconds)
-    Sleep -s 15
+    Start-Sleep -s 300
+    $GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
+
+    if ($GetServicePrincipal -eq $null)
+    {
+        throw "An error ocurred getting the service principal associated to application id $($ServicePrincipal.Id)."
+    }
+    
     $NewRole = New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
     $Retries = 0;
     While ($NewRole -eq $null -and $Retries -le 6)
     {
-        Sleep -s 10
+        Start-Sleep -s 20
         New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
         $NewRole = Get-AzureRMRoleAssignment -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
         $Retries++;
