@@ -430,16 +430,20 @@ if ($servicePrincipalList -ne $null)
     foreach ($sub in $tier2SubscriptionList)
     {
         Write-Verbose "Working on tier 2 subscription $(Get-ConfigValue $sub.SubscriptionID $config)" -Verbose
+        
         $subscriptionId =  Get-ConfigValue $sub.SubscriptionID $config
+        $resourceGroup = Get-ConfigValue $sub.resourceGroupName $config
+        $scope =  "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
+
         Select-AzureRmSubscription -SubscriptionId $subscriptionId
 
         foreach ($servicePrincipal in $servicePrincipalList)
         {
-            $roleAssignment = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope "/subscriptions/$subscriptionId" -ErrorAction SilentlyContinue
+            $roleAssignment = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $scope -ErrorAction SilentlyContinue
             if ($roleAssignment -eq $null)
             {
                 Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
-                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope "/subscriptions/$subscriptionId" -ErrorAction SilentlyContinue
+                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $scope
             }
         }
     }
