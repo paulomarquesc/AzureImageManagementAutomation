@@ -4,13 +4,9 @@
 .DESCRIPTION
     GenerateTier2StorageJson.ps1 - This sample script generates a storage account to be onboarded. This is meant to be executed when a new subscription needs to be onboarded
     in the image process solution, it requires a subscription Id, which regions to create the storage accounts and an individual starting Id for each storage account, the output
-    will be one storage account per region per subscription. This output is a JSON file with the individual tier 2 storage account entries, which needs to be copied excluding the []'s,
-    into the SetupInfoHON.json file at the end of the section tier2StorageAccounts, please remember that this is a JSON file and needs to be JSON compliant so extra attention is needed
-    regarding commas, brakets and curly brakets.
-
-    This script just generates the output necessary to be copied inside the SetupInfoHON.json file, it does not create any resource in Azure. After the setup file is updated with 
-    the new content, it is required to execute the Setup.ps1 script again, in order to add the storage accounts to support a new subscription(s)/region(s).
-
+    will be one storage account per region per subscription. This includes the individual tier 2 storage account entries into the setup info json file at the end of the section tier2StorageAccounts.
+    This script just generates the output inside of a new setup info json file, it does not create any resource in Azure. After the setup file is updated with 
+    the new content, it is required to execute the Setup.ps1 script for the first time or again, in order to add the storage accounts to support a new subscription(s)/region(s).
 .PARAMETER subscriptionId
     Individual subscription id to be onboarded, meaning that the storage account(s) json definitions will be generated there. Quantity of storage accounts will depend on the number of regions
     supported by this subscription.
@@ -26,15 +22,17 @@
 .PARAMETER setupInfoFile
     Points to the setup info file used by the Azure Image Management Automation solution, if this argument is passed, this script will update the file directly and place the additional
     storage entries in the correct section. 
-.PARAMETER outputFile
-    This is the JSON file containing the output for the storage accounts, as mentioned in the description, copy the contents to the correct section of the setup file and execute
-    the setup script again in order to have the new storage accounts in the target regions and subcription.
+.PARAMETER storageAccountPrefix
+    Storage account prefix, maximum length is 14 due to some other unique strings being appeneded during the setup process. 
 .EXAMPLE
-    Single Subscription
-    .\GenerateTier2StorageJson.ps1 -subscriptionId "123456" -regionList "westus","eastus","brazilsouth" -startingIdNumber 20 -outputFile .\test1.json
+    Single Subscription using own numbering for storage identification in the config file
+    .\GenerateTier2StorageJson.ps1 -subscriptionId "123456" -regionList "westus","eastus","brazilsouth" -startingIdNumber 20 -setupInfoFile .\test1.json
 .EXAMPLE
-    Subscription list from file
-    .\GenerateTier2StorageJson.ps1 -subscriptionListFile .\subs.csv -regionList "westus","eastus","brazilsouth" -startingIdNumber 20 -outputFile .\test2.json
+    Subscription list from file using own numbering for storage identification in the config file
+    .\GenerateTier2StorageJson.ps1 -subscriptionListFile .\subs.csv -regionList "westus","eastus","brazilsouth" -startingIdNumber 20 -setupInfoFile .\test2.json
+.EXAMPLE
+    Subscription list from file using a auto generated guid for storage identification in the config file
+    .\GenerateTier2StorageJson.ps1 -subscriptionListFile .\subs.csv -regionList "westus","eastus","brazilsouth" setupInfoFile .\test2.json
 #>
 [CmdletBinding()]
 param
@@ -45,7 +43,7 @@ param
     [Parameter(Mandatory=$true,ParameterSetName="subscriptionFile")]
     [string]$subscriptionListFile,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$true)]
     [string]$setupInfoFile,
 
     [string[]]$regionList,
@@ -53,7 +51,10 @@ param
     [Parameter(Mandatory=$false)]
     [int]$startingIdNumber=-1,
 
-    [string]$outputFile = "onboardStorageAccounts.json"
+    [Parameter(Mandatory=$true)]
+    [string]$storageAccountPrefix
+    
+
 )
 
 function createStorageAccountEntry
@@ -62,11 +63,12 @@ function createStorageAccountEntry
     (
         [string]$id,
         [string]$region,
-        [string]$subscriptionId
+        [string]$subscriptionId,
+        [string]$saPrefix
     )
 
     return New-Object -typename PSObject -Property @{"id"="$id";
-                "storageAccountName"='^([StorageAccountName]::new("honosimg",[storageAccountTier]::tier2)).GetSaName($true)';
+                "storageAccountName"='^([StorageAccountName]::new("'+$saPrefix+'",[storageAccountTier]::tier2)).GetSaName($true)';
                 "resourceGroup"='^$config.storage.tier0StorageAccount.resourceGroup';
                 "location"=$region;
                 "container"='^$config.storage.tier0StorageAccount.container';
@@ -74,17 +76,20 @@ function createStorageAccountEntry
 
 }
 
-if ($setupInfoFile -ne $null)
+$ErrorActionPreference = "Stop"
+
+if ($storageAccountPrefix.Length -gt 14)
 {
-    if (!(Test-Path $setupInfoFile))
-    {
-        throw "Setup information $setupInfoFile file not found."
-    }
-
-    $outputFileName = [string]::Format("{0}.New-{1}{2}",[system.io.Path]::GetFileNameWithoutExtension($setupInfoFile),(get-date -Format s).tostring().replace(":","_"),[system.io.Path]::GetExtension($setupInfoFile))
-    $outputFile = join-path -path ([system.io.Path]::GetDirectoryName($setupInfoFile)) $outputFileName
-
+    throw "Storage Account prefix length cannot be greater then 14 characters."
 }
+
+if (!(Test-Path $setupInfoFile))
+{
+    throw "Setup information $setupInfoFile file not found."
+}
+
+$outputFileName = [string]::Format("{0}.New-{1}{2}",[system.io.Path]::GetFileNameWithoutExtension($setupInfoFile),(get-date -Format s).tostring().replace(":","_"),[system.io.Path]::GetExtension($setupInfoFile))
+$outputFile = join-path -path ([system.io.Path]::GetDirectoryName($setupInfoFile)) $outputFileName
 
 $onboardStorageAccounts = @()
 
@@ -96,12 +101,12 @@ switch ($PSCmdlet.ParameterSetName)
         {
             if ($startingIdNumber -gt -1)
             {
-                $onboardStorageAccounts += createStorageAccountEntry -id $startingIdNumber -region $region -subscriptionId $subscriptionId
+                $onboardStorageAccounts += createStorageAccountEntry -id $startingIdNumber -region $region -subscriptionId $subscriptionId -saPrefix $storageAccountPrefix
                 $startingIdNumber += 1
             }
             else
             {
-                $onboardStorageAccounts += createStorageAccountEntry -id ([guid]::NewGuid().Guid) -region $region -subscriptionId $subscriptionId   
+                $onboardStorageAccounts += createStorageAccountEntry -id ([guid]::NewGuid().Guid) -region $region -subscriptionId $subscriptionId -saPrefix $storageAccountPrefix
             }
         }
     }
@@ -121,31 +126,24 @@ switch ($PSCmdlet.ParameterSetName)
             {
                 if ($startingIdNumber -gt -1)
                 {
-                    $onboardStorageAccounts += createStorageAccountEntry -id $startingIdNumber -region $region -subscriptionId $sub
+                    $onboardStorageAccounts += createStorageAccountEntry -id $startingIdNumber -region $region -subscriptionId $sub -saPrefix $storageAccountPrefix
                     $startingIdNumber += 1
                 }
                 else
                 {
-                    $onboardStorageAccounts += createStorageAccountEntry -id ([guid]::NewGuid().Guid) -region $region -subscriptionId $sub   
+                    $onboardStorageAccounts += createStorageAccountEntry -id ([guid]::NewGuid().Guid) -region $region -subscriptionId $sub -saPrefix $storageAccountPrefix
                 }
             }
         }
     }
 }
 
-if ([string]::IsNullOrEmpty($setupInfoFile))
-{
-    $onboardStorageAccounts | ConvertTo-Json  | Out-File $outputFile
-}
-else
-{
-    $config = Get-Content $setupInfoFile -Raw | ConvertFrom-Json
+$config = Get-Content $setupInfoFile -Raw | ConvertFrom-Json
 
-    foreach ($storage in $onboardStorageAccounts)
-    {
-        $config.storage.tier2StorageAccounts += $storage
-    }
-
-    # Generating a new SetupInfo file
-    $config | ConvertTo-Json -Depth 99 | Out-File $outputFile
+foreach ($storage in $onboardStorageAccounts)
+{
+    $config.storage.tier2StorageAccounts += $storage
 }
+
+# Generating a new SetupInfo file
+$config | ConvertTo-Json -Depth 99 | Out-File $outputFile
