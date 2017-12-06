@@ -26,7 +26,18 @@
         Tier 0 subscription Id, this is the subscription that contains all runbooks, config storage account and receives the VHD upload from on-premises.
     .PARAMETER OsType
         VHD's Operating System type, valid ones are Windows and Linux.  
+    .PARAMETER sourceAzureRmDiskName
+        This parameter is used when the source VHD is based on a managed disk in Azure, this is the managed disk name.
+    .PARAMETER sourceAzureRmDiskResourceGroup
+        Resource Group name where the managed disk resides.
+    .PARAMETER sourceAzureRmDiskAccessInSeconds
+        Optional parameter that tells for how long this script will have access to the VHD, default value is 3600 seconds (1 hour)
+    .PARAMETER tier0VhdName
+        When getting the source VHD from the managed disk, there is no VHD name, it defaults to abc, this parameter gives the name of the blob that will be copied to
+        the tier 0 storage account to start the VHD distribution.
+    
     .EXAMPLE
+        # Using local VHD
         .\UploadVHD.ps1 -description "test submission 01" `
             -Tier0SubscriptionId $Tier0SubscriptionId `
             -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
@@ -34,6 +45,19 @@
             -ImageName $imgName `
             -VhdFullPath "c:\temp\Test2016-Img01.vhd" `
             -OsType "Windows" `
+            -ImageResourceGroupName "Images-RG01"
+
+    .EXAMPLE
+        # Using managed disk SAS Token based URI
+        .\UploadVHD.ps1 -description "test submission 02" `
+            -Tier0SubscriptionId $Tier0SubscriptionId `
+            -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
+            -ConfigStorageAccountName $ConfigStorageAccountName `
+            -ImageName $imgName `
+            -sourceAzureRmDiskName "centos01_OsDisk_1_28e8cc4091d142ebb3a820a0c703e811" `
+            -sourceAzureRmDiskResourceGroup "test" `
+            -tier0VhdName "centos-golden-image.vhd" `
+            -OsType "Linux" `
             -ImageResourceGroupName "Images-RG01"
     
 #>
@@ -54,8 +78,20 @@ Param
     [AllowNull()]
     [string]$ConfigurationTableName= "imageManagementConfiguration",
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$true,ParameterSetName="localVhd")]
     [string] $VhdFullPath,
+
+    [Parameter(Mandatory=$true,ParameterSetName="sasToken")]
+    [string] $sourceAzureRmDiskName,
+
+    [Parameter(Mandatory=$true,ParameterSetName="sasToken")]
+    [string] $sourceAzureRmDiskResourceGroup,
+
+    [Parameter(Mandatory=$false,ParameterSetName="sasToken")]
+    [int] $sourceAzureRmDiskAccessInSeconds=3600,
+
+    [Parameter(Mandatory=$true,ParameterSetName="sasToken")]
+    [string] $tier0VhdName,
 
     [Parameter(Mandatory=$true)]
     [string] $ImageName,
@@ -63,7 +99,7 @@ Param
     [Parameter(Mandatory=$true)]
     [string] $ImageResourceGroupName,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false,ParameterSetName="localVhd")]
     [string] $UploaderThreadNumber = 10,
 
     [Parameter(Mandatory=$false)]
@@ -86,6 +122,8 @@ $ErrorActionPreference = "Stop"
 Write-Verbose "Starting upload script" -Verbose
 
 Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
+
+Write-Verbose "Getting configuration information" -Verbose
 
 # Getting a reference to the configuration table
 $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
@@ -128,49 +166,162 @@ else
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 }
 
-# Checking if VHD file exists
-$msg = "Checking if local VHD file ($VhdFullPath) exists"
-Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-if (!(Test-Path $VhdFullPath))
-{
-    $msg = "VHD file $VhdFullPath not found."
-    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
-    throw $msg
-}
-
 # Uploading the VHD
+Write-Verbose "Uploading the VHD" -Verbose
 
-# TODO: Implement log - start
-$uri = [string]::Format("https://{0}.blob.core.windows.net/{1}/{2}",$tier0StorageAccount.StorageAccountName,$tier0StorageAccount.container,[system.io.path]::GetFileName($VhdFullPath))
-
-$msg = "Starting uploading VHD to $uri"
-Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-try
+if ($PSCmdlet.ParameterSetName -eq "localVhd")
 {
-    Add-AzureRmVhd `
-        -ResourceGroupName $tier0StorageAccount.resourceGroupName `
-        -Destination $uri `
-        -LocalFilePath $VhdFullPath `
-        -NumberOfUploaderThreads $uploaderThreadNumber `
-        -OverWrite:$overrite
-
-    $msg = "Uploading VHD ($VhdFullPath) completed"
+    $msg = "Using the local vhd upload option"
+    Write-Verbose $msg -Verbose
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-}
-catch
-{
-    $msg = "An error occured executing Add-AzureRmVhd."
-    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)   
-    
-    $msg = "Error Details: $_"
-    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
 
-    throw $_
+    # Checking if local VHD file exists
+    $msg = "Checking if local VHD file ($VhdFullPath) exists"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    if (!(Test-Path $VhdFullPath))
+    {
+        $msg = "VHD file $VhdFullPath not found."
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+        throw $msg
+    }
+
+    $vhdName =[system.io.path]::GetFileName($VhdFullPath)
+
+    $uri = [string]::Format("https://{0}.blob.core.windows.net/{1}/{2}",$tier0StorageAccount.StorageAccountName,$tier0StorageAccount.container,[system.io.path]::GetFileName($VhdFullPath))
+
+    $msg = "Starting uploading VHD to $uri"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    try
+    {
+        Add-AzureRmVhd `
+            -ResourceGroupName $tier0StorageAccount.resourceGroupName `
+            -Destination $uri `
+            -LocalFilePath $VhdFullPath `
+            -NumberOfUploaderThreads $uploaderThreadNumber `
+            -OverWrite:$overrite
+
+        $msg = "Uploading VHD ($VhdFullPath) completed"
+        Write-Verbose $msg -Verbose
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    }
+    catch
+    {
+        $msg = "An error occured executing Add-AzureRmVhd."
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)   
+        
+        $msg = "Error Details: $_"
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+        throw $_
+    }
+
+}
+else
+{
+    $msg = "Copying VHD from managed disk option (directly in Azure)"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $vhdName = $tier0VhdName
+
+    # Getting mananaged disk SAS token based URL
+    try
+    {
+        $msg = "Getting mananaged disk SAS token based URL"
+        Write-Verbose $msg -Verbose
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+        $sas = Grant-AzureRmDiskAccess -Access Read -DurationInSecond $sourceAzureRmDiskAccessInSeconds -ResourceGroupName $sourceAzureRmDiskResourceGroup -DiskName $sourceAzureRmDiskName
+
+        $msg = "SAS Token based URL: $($sas.AccessSAS)"
+        Write-Verbose $msg -Verbose
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    }
+    catch  [Microsoft.Azure.Commands.Compute.Automation.GrantAzureRmDiskAccess]
+    {
+        $msg = "Disk $sourceAzureRmDiskName is currently attached to a VM in running state.`nError details: $_" 
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+        throw "Disk $sourceAzureRmDiskName is currently attached to a VM in running state.`nError details: $_"    
+    }
+    catch
+    {
+        $msg = "An error ocurred trying to get access to the managed disk VHD.`nError details: $_" 
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+        throw $_
+    }
+    
+    # Checking if VHD URL is accesible
+    $msg = "Checking if VHD URL is accesible" 
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $HTTP_Request = [System.Net.WebRequest]::Create($sas.AccessSAS)
+    $HTTP_Response = $HTTP_Request.GetResponse()
+    $HTTP_Status = [int]$HTTP_Response.StatusCode
+    $HTTP_Response.Close()
+
+    if ($HTTP_Status -gt 200)
+    {
+        $msg = "Could not access managed disk using URI: $($sas.AccessSAS)"
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+        throw "Could not access managed disk using URI: $($sas.AccessSAS)"
+    }
+
+    # Getting tier 0 (destination) context
+    $msg = "Getting tier 0 (destination) context"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $destContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccount.resourceGroupName -Name $tier0StorageAccount.storageAccountName).Context
+
+    # Check if destination container exists
+    $destContainer = Get-AzureStorageContainer -Name $tier0StorageAccount.container -Context $destContext -ErrorAction SilentlyContinue
+
+    if ($destContainer -eq $null)
+    {
+        $msg = "Creating destination container $($tier0StorageAccount.container) on storage account $($tier0StorageAccount.storageAccountName) located in resource group $($tier0StorageAccount.resourceGroupName)"
+        Write-Verbose $msg -Verbose
+        Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+        New-AzureStorageContainer -Name $tier0StorageAccount.container -Context $destContext -Permission Off
+    }
+    
+    $msg = "Starting copy process using Start-AzureStorageBlobCopy"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    Start-AzureStorageBlobCopy -AbsoluteUri $sas.AccessSAS -DestContainer $tier0StorageAccount.container -DestBlob $tier0VhdName -DestContext $destContext -Force
+
+    # Looping to check copy status
+    $msg = "Looping to check copy status"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    do
+    {
+        $state = Get-AzureStorageBlobCopyState -Blob $tier0VhdName -Container $tier0StorageAccount.container -Context $destContext
+        Write-Progress -Activity "Managed Disk VHD Copy Process" -status "Copied bytes $($state.bytesCopied) out of $($state.TotalBytes)" -percentComplete (($state.bytesCopied/$state.TotalBytes)*100)
+        Start-Sleep -Seconds 5
+    }
+    until ($state.Status -ne "pending")
+
+    Write-Progress -Activity "Managed Disk VHD Copy Process" -status "Total bytes $($state.TotalBytes)" -percentComplete 100 -Completed
+
+    $msg = "VHD Copy from managed disk to tier 0 storage account completed. Bytes copied $($state.bytesCopied) out of total $($state.TotalBytes)"
+    Write-Verbose $msg -Verbose
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 }
 
 # Getting Main Automation Account information
+Write-Verbose "Initiating process to create the tier 1 copies (multiple copies of the blob in tier 0 storage account)" -Verbose
 $msg = "Getting Main Automation Account information"
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
@@ -190,12 +341,13 @@ Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -modu
 $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
             "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;
             "ConfigStorageAccountName"=$ConfigStorageAccountName;
-            "VhdName"=[system.io.path]::GetFileName($VhdFullPath);
+            "VhdName"=$vhdName;
             "ConfigurationTableName"=$ConfigurationTableName;
             "StatusCheckInterval"=60;
             "jobId"=$jobId}
 
 $msg = "Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters: $($params | convertTo-json -Compress)"
+Write-Verbose $msg -Verbose
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
         
 try
@@ -206,6 +358,7 @@ try
                                            -ResourceGroupName $mainAutomationAccount.resourceGroupName -Wait
     
     $msg = "Tier1 distribution completed"
+    Write-Verbose $msg -Verbose
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 }
 catch
@@ -233,6 +386,7 @@ $vhdMessage = @{ "vhdName"=[system.io.path]::GetFileName($VhdFullPath);
                  "jobId"=$jobId}
 
 $msg = "Placing message in the queue for tier2 distribution process (VHD copy to each subscription and related regions)."
+Write-Verbose $msg -Verbose
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 $msg = $vhdMessage | convertTo-json -Compress
@@ -241,4 +395,5 @@ Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::copyProcessMe
 Add-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdMessage
 
 $msg = "Upload script execution completed."
+Write-Verbose $msg -Verbose
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

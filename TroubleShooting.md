@@ -97,7 +97,7 @@ Get-AzureStorageTableRowAll -table $jobTable
 $jobId= "<row key of the job you want to query>"
 
 # Run the query cmdlet
-Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName $configStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -jobId $jobId -Level All -step tier2Distribution | sort timestamp | select timestamp,step,message
+Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName $configStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -jobId $jobId -Level All -step tier2Distribution | sort tableTimeStamp | select tableTimeStamp,step,message
 ```
 
 Setup.ps1 script intermitently get the Connection AzureRunAsConnection with a wrong Application Id with value System.Object[]
