@@ -32,7 +32,7 @@
         Resource Group name where the managed disk resides.
     .PARAMETER sourceAzureRmDiskAccessInSeconds
         Optional parameter that tells for how long this script will have access to the VHD, default value is 3600 seconds (1 hour)
-    .PARAMETER tier0VhdName
+    .PARAMETER vhdName
         When getting the source VHD from the managed disk, there is no VHD name, it defaults to abc, this parameter gives the name of the blob that will be copied to
         the tier 0 storage account to start the VHD distribution.
     
@@ -56,7 +56,7 @@
             -ImageName $imgName `
             -sourceAzureRmDiskName "centos01_OsDisk_1_28e8cc4091d142ebb3a820a0c703e811" `
             -sourceAzureRmDiskResourceGroup "test" `
-            -tier0VhdName "centos-golden-image.vhd" `
+            -vhdName "centos-golden-image.vhd" `
             -OsType "Linux" `
             -ImageResourceGroupName "Images-RG01"
     
@@ -91,7 +91,7 @@ Param
     [int] $sourceAzureRmDiskAccessInSeconds=3600,
 
     [Parameter(Mandatory=$true,ParameterSetName="sasToken")]
-    [string] $tier0VhdName,
+    [string] $vhdName,
 
     [Parameter(Mandatory=$true)]
     [string] $ImageName,
@@ -226,8 +226,6 @@ else
     Write-Verbose $msg -Verbose
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-    $vhdName = $tier0VhdName
-
     # Getting mananaged disk SAS token based URL
     try
     {
@@ -297,22 +295,13 @@ else
     Write-Verbose $msg -Verbose
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-    Start-AzureStorageBlobCopy -AbsoluteUri $sas.AccessSAS -DestContainer $tier0StorageAccount.container -DestBlob $tier0VhdName -DestContext $destContext -Force
+    Start-AzureStorageBlobCopy -AbsoluteUri $sas.AccessSAS -DestContainer $tier0StorageAccount.container -DestBlob $vhdName -DestContext $destContext -Force
 
-    # Looping to check copy status
-    $msg = "Looping to check copy status"
+    $msg = "Wait for copy completion"
     Write-Verbose $msg -Verbose
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-    do
-    {
-        $state = Get-AzureStorageBlobCopyState -Blob $tier0VhdName -Container $tier0StorageAccount.container -Context $destContext
-        Write-Progress -Activity "Managed Disk VHD Copy Process" -status "Copied bytes $($state.bytesCopied) out of $($state.TotalBytes)" -percentComplete (($state.bytesCopied/$state.TotalBytes)*100)
-        Start-Sleep -Seconds 5
-    }
-    until ($state.Status -ne "pending")
-
-    Write-Progress -Activity "Managed Disk VHD Copy Process" -status "Total bytes $($state.TotalBytes)" -percentComplete 100 -Completed
+    $state = Get-AzureStorageBlobCopyState -Blob $vhdName -Container $tier0StorageAccount.container -Context $destContext -WaitForComplete
 
     $msg = "VHD Copy from managed disk to tier 0 storage account completed. Bytes copied $($state.bytesCopied) out of total $($state.TotalBytes)"
     Write-Verbose $msg -Verbose
