@@ -379,7 +379,7 @@ $copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccou
                                           -storageAccountName  $queueInfo.storageAccountName `
                                           -queueName $queueInfo.copyProcessQueueName
 
-$vhdMessage = @{ "vhdName"=[system.io.path]::GetFileName($VhdFullPath);
+$vhdMessage = @{ "vhdName"=$vhdName;
                  "imageName"=$ImageName;
                  "osType"=$osType;
                  "imageResourceGroupName"=$ImageResourceGroupName;
