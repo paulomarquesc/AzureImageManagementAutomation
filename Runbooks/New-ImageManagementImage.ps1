@@ -20,6 +20,8 @@
         Name of the tier 0 subscription (the one that contains the configuration table). 
     .EXAMPLE
 #>
+using module AzureRmImageManagement
+
 Param
 (
     [Parameter(Mandatory=$true)]
@@ -45,6 +47,7 @@ Param
 )
 
 $ErrorActionPreference = "Stop"
+$moduleName = "New-ImageManagementImage.ps1"
 
 #
 # Runbook body
@@ -77,53 +80,77 @@ catch
     }
 }
 
-$vhdInfo = $VhdDetails | ConvertFrom-Json
-
-Write-Output -InputObject $vhdInfo
-
-try
-{
-    Select-AzureRmSubscription -SubscriptionId $vhdInfo.subscriptionId
-    
-    # Check if resource group exists, create if not
-    $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -ErrorAction SilentlyContinue
-    if ($rg -eq $null)
-    {
-        Write-Output "Creating resource group $($vhdInfo.imageResourceGroup) at location $($vhdInfo.location)"
-        New-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -Location $vhdInfo.location
-    }
-
-    # Appending location to the image name
-    $imageName = [string]::Format("{0}.{1}",$vhdInfo.imageName,$vhdInfo.location)
-
-    # Check if image exists, create if not
-    $image = Find-AzureRmResource -ResourceGroupName $vhdInfo.imageResourceGroup -Name $vhdInfo.imageName -ResourceType Microsoft.Compute/images
-    if ($image -ne $null)
-    {
-        Write-Output "Image $imageName already exists, deleting image."
-        Remove-AzureRmImage -ResourceGroupName $vhdInfo.imageResourceGroup -ImageName $imageName -Force
-    }
-
-    Start-Sleep -Seconds 15 # Give some time for the platform replicate the change
-
-    Write-Output "Creating new image $imageName"
-    $imageConfig = New-AzureRmImageConfig -Location $vhdInfo.location
-    $imageConfig = Set-AzureRmImageOsDisk -Image $imageConfig -OsType $vhdInfo.osType -OsState Generalized -BlobUri $vhdInfo.vhdUri
-
-    New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imageResourceGroup -Image $imageConfig
-}
-catch
-{
-    throw "An error occured trying to create an image. VhdDetails: $VhdDetails.`nError: $_"
-}
-
 # Selecting tier 0 subscription
 Select-AzureRmSubscription -SubscriptionId $tier0SubscriptionId
 
 # Getting the configuration table
 $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
+$vhdInfo = $VhdDetails | ConvertFrom-Json
+
+# Getting the Job Log table
+$log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable
+
+$msg = "VHD information to create the image: $VhdDetails"
+Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+try
+{
+    $msg = "Selecting tier 2 subscription $($vhdInfo.subscriptionId)"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    Select-AzureRmSubscription -SubscriptionId $vhdInfo.subscriptionId
+    
+    # Check if resource group exists, throw an error if not
+    $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -ErrorAction SilentlyContinue
+    if ($rg -eq $null)
+    {
+        $msg = "Resource gruop $($vhdInfo.subscriptionId) is missing, please create it and make sure to assign Contributor role to service principal $($servicePrincipalConnection.ApplicationId)"
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+        
+        throw $msg
+    }
+
+    # Appending location to the image name
+    $imageName = [string]::Format("{0}.{1}",$vhdInfo.imageName,$vhdInfo.location)
+
+    $msg = "Final image name is $imageName"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    # Check if image exists, create if not
+    $image = Find-AzureRmResource -ResourceGroupName $vhdInfo.imageResourceGroup -Name $vhdInfo.imageName -ResourceType Microsoft.Compute/images
+    if ($image -ne $null)
+    {
+        $msg = "Image $imageName already exists, deleting image before proceeding."
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        Remove-AzureRmImage -ResourceGroupName $vhdInfo.imageResourceGroup -ImageName $imageName -Force
+    }
+
+    Start-Sleep -Seconds 15 # Give some time for the platform replicate the change
+
+    $msg = "Creating new image $imageName"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $imageConfig = New-AzureRmImageConfig -Location $vhdInfo.location
+    $imageConfig = Set-AzureRmImageOsDisk -Image $imageConfig -OsType $vhdInfo.osType -OsState Generalized -BlobUri $vhdInfo.vhdUri
+
+    New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imageResourceGroup -Image $imageConfig
+
+    $msg = "Image sucessfully create: $imageName"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreationConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+}
+catch
+{
+    $msg = "An error occured trying to create an image. VhdDetails: $VhdDetails.`nError: $_"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    throw 
+}
+
 # Increases automation account availability for image creationg
+$msg = "Increasing automation account availability for image creationg"
+Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 $customFilter = "(PartitionKey eq 'automationAccount') and (automationAccountName eq `'" + $AutomationAccountName + "`')"
 $AutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $configurationTable
 

@@ -70,6 +70,7 @@ function createStorageAccountEntry
     return New-Object -typename PSObject -Property @{"id"="$id";
                 "storageAccountName"='^([StorageAccountName]::new("'+$saPrefix+'",[storageAccountTier]::tier2)).GetSaName($true)';
                 "resourceGroup"='^$config.storage.tier0StorageAccount.resourceGroup';
+                "imagesResourceGroup"= '^$config.general.imagesResourceGroup';
                 "location"=$region;
                 "container"='^$config.storage.tier0StorageAccount.container';
                 "subscriptionId"="$subscriptionId"}

@@ -4,9 +4,13 @@ For detailed information on how to setup and use this solution, please refer to 
 
 ## Release Notes
 
-### Release 12/06/2017
+### Release 12/07/2017
 * Upated the UploadVHD.ps1 file to allow the VHD upload to the tier 0 storage account directly from a managed disk
 * Updated troubleshoot guide due to the change in AzureRmStorageTable related to system default entity attribute called Timestamp that was renamed to TableTimestamp due to conflicts when customers already have a custom attribute with same name
+* To be more exact regarding Job Ids, just a single item is fetched from the queue and processed at a given scheduled execution 
+* Included new cmdlets in AzureRmImageManagement module to update logs with temporary job id and to clean up empty job id items
+* Fixed a typo on steps enumeration, correct item is imageCreationConcluded
+* Implemented log capabilities on remaining runbooks
 
 ### Release 12/05/2017
 * Updated script GenerateTier2StorageJson.ps1 to work with the setup info file directly as the only option and fixed an issue with hard coded storage account prefix, which now is a parameter

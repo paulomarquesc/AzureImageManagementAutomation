@@ -104,7 +104,8 @@ if ($tier0StorageItem -eq $null)
                                             "tier"=0;
                                             "container"=Get-ConfigValue $config.storage.tier0StorageAccount.container $config;
                                             "location"=Get-ConfigValue $tier0StorageAccountLocation $config;
-                                            "tier1Copies"=Get-ConfigValue $config.storage.tier0StorageAccount.tier1Copies $config}
+                                            "tier1Copies"=Get-ConfigValue $config.storage.tier0StorageAccount.tier1Copies $config;
+                                            "imagesResourceGroup"=Get-ConfigValue $config.storage.tier0StorageAccount.imagesResourceGroup $config}
 
     Add-AzureStorageTableRow -table $configurationTable -partitionKey "storage" -rowKey ([guid]::NewGuid().guid) -property $tier0StorageProperties 
 }
@@ -190,11 +191,20 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
         # Waiting 10 seconds
         Start-Sleep -Seconds 10
 
+        # Tier 2 storage account resource groups
         $rg = Get-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.resourceGroup $config) -ErrorAction SilentlyContinue
         if ($rg -eq $null)
         {
-            Write-Verbose "Creating rerource group $(Get-ConfigValue $t2Storage.resourceGroup $config)" -Verbose
+            Write-Verbose "Creating solution rerource group $(Get-ConfigValue $t2Storage.resourceGroup $config)" -Verbose
             New-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.resourceGroup $config) -Location (Get-ConfigValue $t2Storage.location $config)
+        }
+
+        # Image resource groups
+        $rg1 = Get-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.imagesResourceGroup $config) -ErrorAction SilentlyContinue
+        if ($rg1 -eq $null)
+        {
+            Write-Verbose "Creating images group $(Get-ConfigValue $t2Storage.imagesResourceGroup $config)" -Verbose
+            New-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.imagesResourceGroup $config) -Location (Get-ConfigValue $t2Storage.location $config)
         }
 
         # Create the storage account
@@ -208,7 +218,8 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
                                                     "subscriptionId"=Get-ConfigValue $t2Storage.subscriptionId $config;
                                                     "tier"=2;
                                                     "container"=Get-ConfigValue $t2Storage.container $config;
-                                                    "location"=Get-ConfigValue $t2Storage.location $config}
+                                                    "location"=Get-ConfigValue $t2Storage.location $config;
+                                                    "imagesResourceGroup"=Get-ConfigValue $t2Storage.imagesResourceGroup $config}
 
             Add-AzureStorageTableRow -table $configurationTable -partitionKey "storage" -rowKey ([guid]::NewGuid().guid) -property $tier2StorageProperties 
         }
@@ -423,27 +434,43 @@ Write-Verbose "Graph Api URI: $uri"
 Write-Verbose "Invoking the request" -Verbose
 $servicePrincipalList = (Invoke-RestMethod -Uri $uri -Headers $authHeader -Method Get).value
 
+# Adding Subscription from Tier 0 storage to the list as well
+$tier2SubscriptionList = @()
+$tier2SubscriptionList += Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable
+
 if ($servicePrincipalList -ne $null)
 {
     Write-Verbose "Getting Tier 2 subscription List" -Verbose
-    $tier2SubscriptionList = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
+    $tier2SubscriptionList += Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
     foreach ($sub in $tier2SubscriptionList)
     {
         Write-Verbose "Working on tier 2 subscription $(Get-ConfigValue $sub.SubscriptionID $config)" -Verbose
         
-        $subscriptionId =  Get-ConfigValue $sub.SubscriptionID $config
-        $resourceGroup = Get-ConfigValue $sub.resourceGroupName $config
-        $scope =  "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
+        $scope =  "/subscriptions/$($sub.SubscriptionID)/resourceGroups/$($sub.resourceGroupName)"
 
-        Select-AzureRmSubscription -SubscriptionId $subscriptionId
+        Write-Verbose "Tier2 Storage RG Scope: $scope" -Verbose
 
+        $imagesScope =  "/subscriptions/$($sub.SubscriptionID)/resourceGroups/$($sub.imagesResourceGroup)"
+       
+        Write-Verbose "Images RG Scope: $imagesScope" -Verbose
+
+        Select-AzureRmSubscription -SubscriptionId $sub.SubscriptionID
+
+        # Adding role assignment for both resource groups
         foreach ($servicePrincipal in $servicePrincipalList)
         {
-            $roleAssignment = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $scope -ErrorAction SilentlyContinue
-            if ($roleAssignment -eq $null)
+            $roleAssignmentSolutionRg = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $scope -ErrorAction SilentlyContinue
+            if ($roleAssignmentSolutionRg -eq $null)
             {
                 Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
                 New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $scope
+            }
+
+            $roleAssignmentImagesRg = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $imagesScope -ErrorAction SilentlyContinue
+            if ($roleAssignmentImagesRg -eq $null)
+            {
+                Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
+                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $imagesScope
             }
         }
     }

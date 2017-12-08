@@ -39,7 +39,7 @@ enum steps
     copyProcessMessage
     tier1DistributionCopyConcluded
     tier2DistributionCopyConcluded
-    imgageCreationConcluded
+    imageCreationConcluded
 }
 
 enum storageAccountTier
@@ -604,12 +604,14 @@ function Add-AzureRmRmImgMgmtJob
         [string]$jobId,
         [string]$description,
         [string]$submissionDate,
+        [string]$vhdInfo,
         $jobsTable
     )
 
     # Creating job submission information
     [hashtable]$jobProps = @{ "description"=$description;
-                         "submissionDate"=$submissionDate}
+                              "submissionDate"=$submissionDate;
+                              "vhdInfo"=$vhdInfo}
 
     $job = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'job') and (RowKey eq $jobId)" -table $jobProps
 
@@ -754,3 +756,63 @@ function Get-AzureRmImgMgmtLogTable
     return (Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName)
 
 }
+
+function Update-AzureRmImgMgmtLogJobId
+{
+    # This function replaces the Partition Key of a given specific Partition Key with a new Partition Key
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$tempJobId,
+
+        [Parameter(Mandatory=$true)]
+        [string]$finalJobId,
+
+        $logTable
+    )
+
+    $systemProperties = @('PartitionKey','RowKey','TableTimestamp','Etag')
+
+    $customFilter = "PartitionKey eq '"+$tempJobId+"'"
+    $tempJobIdItems = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $logTable
+
+    foreach ($item in $tempJobIdItems)
+    {
+        $RowKey = $item.RowKey
+
+        Remove-AzureStorageTableRow -table $logTable -entity $item
+
+        $newItem = @{}
+
+        $item.psobject.properties | ForEach-Object {
+            if (-not ($systemProperties.Contains($_.name))) 
+            {
+                $newItem[$_.Name] = $_.value
+            }
+        }
+
+        Add-StorageTableRow -table $logTable -partitionKey $finalJobId -rowKey $RowKey -property $newItem
+
+    }
+}
+function Remove-AzureRmImgMgmtLogTemporaryJobIdEntry
+{
+    # This function removes log entries with the temporary Joib Id 
+    param
+    (
+        [string]$tempJobId = [string]::Empty,
+
+        $logTable
+    )
+
+    $customFilter = "PartitionKey eq '"+$tempJobId+"'"
+    $tempJobIdItems = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $logTable
+
+    foreach ($item in $tempJobIdItems)
+    {
+        Remove-AzureStorageTableRow -table $logTable -entity $item
+    }
+}
+
+
+
