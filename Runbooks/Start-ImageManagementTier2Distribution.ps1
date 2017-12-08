@@ -282,10 +282,12 @@ if ($vhdToProcess -ne $null)
         }
     }
 
+    # TODO: cmdlet to get status will test completion of tier 2 copy
+    # TODO: clean up tier 1 copies if 100% tier 2 done
+
     $msg = "Runbook execution completed"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 }
 
 # Removing temporary and blank job id entries if any
 Remove-AzureRmImgMgmtLogTemporaryJobIdEntry -tempJobId $tempJobId -logTable $log
-Remove-AzureRmImgMgmtLogTemporaryJobIdEntry -tempJobId "" -logTable $log

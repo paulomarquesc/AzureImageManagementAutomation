@@ -311,7 +311,10 @@ $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
             "StatusCheckInterval"=60;
             "jobId"=$jobId}
 
-$msg = "Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters: $($params | convertTo-json -Compress)"
+$msg = "Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters on next log line:"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+$msg = $params | convertTo-json -Compress
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
         
 try

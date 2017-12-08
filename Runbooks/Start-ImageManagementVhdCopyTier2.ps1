@@ -199,7 +199,7 @@ try
 
     $state = Get-AzureStorageBlobCopyState -Blob $vhdInfo.vhdName -Container $DestinationStorageAccount.container -Context $destContext -WaitForComplete
 
-    $elapsedTime = $((New-TimeSpan ($CopyStartTime) $($state.CompletionTime)).minutes)
+    $elapsedTime = $((New-TimeSpan ($CopyStartTime) $($state.CompletionTime.DateTime)).minutes)
     $msg = "Tier 2 Copy concluded for VHD $($vhdInfo.vhdName) on destination SA $($destContext.StorageAccount). Elapsed time in minutes: $elapsedTime "
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2DistributionCopyConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
