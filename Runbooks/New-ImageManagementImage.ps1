@@ -102,7 +102,7 @@ try
     Select-AzureRmSubscription -SubscriptionId $vhdInfo.subscriptionId
     
     # Check if resource group exists, throw an error if not
-    $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imageResourceGroup -ErrorAction SilentlyContinue
+    $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imagesResourceGroup -ErrorAction SilentlyContinue
     if ($rg -eq $null)
     {
         $msg = "Resource gruop $($vhdInfo.subscriptionId) is missing, please create it and make sure to assign Contributor role to service principal $($servicePrincipalConnection.ApplicationId)"
@@ -118,12 +118,12 @@ try
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     # Check if image exists, create if not
-    $image = Find-AzureRmResource -ResourceGroupName $vhdInfo.imageResourceGroup -Name $vhdInfo.imageName -ResourceType Microsoft.Compute/images
+    $image = Find-AzureRmResource -ResourceGroupName $vhdInfo.imagesResourceGroup -Name $vhdInfo.imageName -ResourceType Microsoft.Compute/images
     if ($image -ne $null)
     {
         $msg = "Image $imageName already exists, deleting image before proceeding."
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-        Remove-AzureRmImage -ResourceGroupName $vhdInfo.imageResourceGroup -ImageName $imageName -Force
+        Remove-AzureRmImage -ResourceGroupName $vhdInfo.imagesResourceGroup -ImageName $imageName -Force
     }
 
     Start-Sleep -Seconds 15 # Give some time for the platform replicate the change
@@ -134,7 +134,7 @@ try
     $imageConfig = New-AzureRmImageConfig -Location $vhdInfo.location
     $imageConfig = Set-AzureRmImageOsDisk -Image $imageConfig -OsType $vhdInfo.osType -OsState Generalized -BlobUri $vhdInfo.vhdUri
 
-    New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imageResourceGroup -Image $imageConfig
+    New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imagesResourceGroup -Image $imageConfig
 
     $msg = "Image sucessfully create: $imageName"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreationConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

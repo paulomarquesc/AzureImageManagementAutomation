@@ -217,7 +217,7 @@ try
 
     $vhdMessage = @{ "location"=$DestinationStorageAccount.location;
                     "imageName"=$vhdInfo.imageName;
-                    "imageResourceGroup"=$DestinationStorageAccount.imageResourceGroup;
+                    "imagesResourceGroup"=$DestinationStorageAccount.imagesResourceGroup;
                     "osType"=$vhdInfo.osType;
                     "subscriptionId"=$DestinationStorageAccount.subscriptionId;
                     "vhdUri"=[string]::Format("{0}{1}/{2}",$destContext.BlobEndPoint,$DestinationStorageAccount.container,$vhdInfo.vhdName);
