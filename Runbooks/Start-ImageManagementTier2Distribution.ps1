@@ -155,7 +155,7 @@ Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::t
 
 $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $copyQueue
 
-if ($vhdToProcess -ne $null)
+while ($vhdToProcess -ne $null)
 {
     $msg = "Processing message from queue $($vhdToProcess.AsString)"
     
@@ -282,12 +282,14 @@ if ($vhdToProcess -ne $null)
         }
     }
 
-    # TODO: cmdlet to get status will test completion of tier 2 copy
-    # TODO: clean up tier 1 copies if 100% tier 2 done
-
-    $msg = "Runbook execution completed"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    $msg = "Checking queue for new vhd copy process job"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    Start-Sleep -Seconds 30
+    $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $copyQueue
 }
+
+$msg = "Runbook execution completed"
+Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 # Removing temporary and blank job id entries if any
 Remove-AzureRmImgMgmtLogTemporaryJobIdEntry -tempJobId $tempJobId -logTable $log
