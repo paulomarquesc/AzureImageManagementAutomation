@@ -138,10 +138,27 @@ try
 {
     Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId 
 
-    $msg = "Getting destination context object for tier 2 copy -> Subscription: $($DestinationStorageAccount.SubscriptionId) DestStorageAccount: $($DestinationStorageAccount.storageAccountName) DestStorageAccountResourceGroup $($DestinationStorageAccount.resourceGroupName)"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    # Performing a loop to get the destination context with 3 attempts
+    $retryCount = 0
+    while (($destContext -eq $null) -and ($retryCount -lt 3))
+    {
+        $msg = "Getting destination context object for tier 2 copy (attempt $retryCount) -> Subscription: $($DestinationStorageAccount.SubscriptionId) DestStorageAccount: $($DestinationStorageAccount.storageAccountName) DestStorageAccountResourceGroup $($DestinationStorageAccount.resourceGroupName)"
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-    $destContext = (Get-AzureRmStorageAccount -ResourceGroupName $DestinationStorageAccount.resourceGroupName -Name $DestinationStorageAccount.storageAccountName).Context
+        try
+        {
+            $destContext = (Get-AzureRmStorageAccount -ResourceGroupName $DestinationStorageAccount.resourceGroupName -Name $DestinationStorageAccount.storageAccountName).Context
+        }
+        catch
+        { 
+            # Avoiding temporary intermittence to make this fail
+        }
+        
+        Start-Sleep -Seconds 15
+        
+        $retryCount += 1
+    }
+
     if ($destContext -eq $null)
     {
         $msg = "An error occured. Context object could not be retrieved from destination storage account $($DestinationStorageAccount.storageAccountName) at resource group $($DestinationStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
@@ -227,29 +244,11 @@ try
 }
 catch
 {
-    # Making the Automation Account available again and stopping further processing
-    $msg = "An error occured. Making the Automation Account available again and stopping further processing next scheduled time.`nError Details:`n$_"
+    $msg = "An error occured.`nError Details:`n$_"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
-
-     # Increases automation account availability
-    $customFilter = "(PartitionKey eq 'automationAccount') and (automationAccountName eq `'" + $AutomationAccountName + "`')"
-    $AutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $configurationTable
-
-    Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $AutomationAccount
 
     throw $_
 }
 
-# Increases automation account availability
-$msg = "Increases automation account availability"
-Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-$customFilter = "(PartitionKey eq 'automationAccount') and (automationAccountName eq `'" + $AutomationAccountName + "`')"
-$AutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $configurationTable
-
-Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $AutomationAccount
-
 $msg = "$module execution completed" 
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-

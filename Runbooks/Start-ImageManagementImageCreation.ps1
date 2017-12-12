@@ -104,9 +104,6 @@ while ($vhdToProcess -ne $null)
     }
     catch
     {
-        # An error occured, placing message back into the queue for later processing
-        Update-AzureRmStorageQueueMessage -queue $imgQueue -message $vhdToProcess -visibilityTimeout 0
-
         $msg = "An error ocurred: $_"
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
         break
@@ -134,16 +131,6 @@ while ($vhdToProcess -ne $null)
                                     -Parameters $params `
                                     -AutomationAccountName $automationAccount.automationAccountName `
                                     -ResourceGroupName $automationAccount.resourceGroupName
-
-    # Decrease availableJobs at the automation account
-
-    $msg = "Current available jobs for automation account $($automationAccount.availableJobsCount)"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-    $msg = "Updating automation account availability by decreasing its available number"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-    Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $automationAccount -Decrease
 
     # Get next message in the queue
     Start-Sleep -Seconds 30

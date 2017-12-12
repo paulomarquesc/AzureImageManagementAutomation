@@ -241,38 +241,10 @@ while ($vhdToProcess -ne $null)
             
                 throw $_
             }
-    
-            try
-            {
-                $msg = "Current available jobs for automation account $($automationAccount.availableJobsCount)"
-                Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-    
-                # Decrease availableJobs at the automation account
-                $msg = "Decrease availableJobs at the automation account and Updating automation account availability"
-                Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-    
-                Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $automationAccount -Decrease
-            }
-            catch
-            {
-                $msg = "An error ocurred updating the number of available jobs on automation accounts"
-                Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
-            
-                $msg = "Error Details: $_"
-                Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
-            
-                throw $_
-            }
         }
         catch
         {
-            # An error occured, placing message back into the queue for later processing
-            Update-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdToProcess -visibilityTimeout 0
-            
-            $msg = "An error occured getting available automation accounts or there are no available automation account at this moment: `n$_"
-            Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
-
-            $msg = "Runbook execution completed with errors"
+            $msg = "An error occured: `n$_"
             Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
 
             # Removing temporary job id entries if any
@@ -291,5 +263,5 @@ while ($vhdToProcess -ne $null)
 $msg = "Runbook execution completed"
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-# Removing temporary and blank job id entries if any
+# Removing temporary job id entries if any
 Remove-AzureRmImgMgmtLogTemporaryJobIdEntry -tempJobId $tempJobId -logTable $log

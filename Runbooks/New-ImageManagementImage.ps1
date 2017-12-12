@@ -146,12 +146,3 @@ catch
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
     throw 
 }
-
-# Increases automation account availability for image creationg
-$msg = "Increasing automation account availability for image creationg"
-Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-$customFilter = "(PartitionKey eq 'automationAccount') and (automationAccountName eq `'" + $AutomationAccountName + "`')"
-$AutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $configurationTable
-
-Update-AzureRmImgMgmtAutomationAccountAvailabilityCount -table $configurationTable -AutomationAccount $AutomationAccount

@@ -148,12 +148,12 @@ for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
     try
     {
         Start-AzureRmImgMgmtVhdCopy -sourceContainer $tier0StorageAccount.container `
-        -sourceContext $sourceContext `
-        -destContainer $tier0StorageAccount.container `
-        -destContext $sourceContext `
-        -sourceBlobName $VhdName `
-        -destBlobName  $destBlobName `
-        -RetryWaitTime 30
+                                    -sourceContext $sourceContext `
+                                    -destContainer $tier0StorageAccount.container `
+                                    -destContext $sourceContext `
+                                    -sourceBlobName $VhdName `
+                                    -destBlobName  $destBlobName `
+                                    -RetryWaitTime 30
  
         $pendingCopies.Add($destBlobName)
     

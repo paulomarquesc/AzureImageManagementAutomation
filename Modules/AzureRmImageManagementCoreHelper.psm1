@@ -265,16 +265,38 @@ function Get-AzureRmImgMgmtAvailableAutomationAccount
         [string]$AutomationAccountType
     )
 
-    $customFilter = "(PartitionKey eq 'automationAccount') and (type eq `'" + $AutomationAccountType + "`') and (availableJobsCount gt 0)" 
-    $copyAutomationAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $table
+    $customFilter = "(PartitionKey eq 'automationAccount') and (type eq `'" + $AutomationAccountType + "`')" 
+    $automationAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $table
 
-    if ($copyAutomationAccountList -eq $null)
+    $attempts = 0
+
+    while ($attempts -lt 3)
     {
-        throw "System configuration table does not contain dedicated copy Automation Accounts information or there is no available automation accounts at this momement to process the job."
+        Write-Output "Attempt # $attempts to get an available automation account"
+        foreach ($automationAccount in $automationAccountList)
+        {
+            # Getting all four possible status count that will lead to jobs being executed
+            $jobCount = 0
+            $jobCount += (Get-AzureRmAutomationJob -Status Running -ResourceGroupName $automationAccount.resourceGroupName -AutomationAccountName $automationAccount.automationAccountName).count
+            $jobCount += (Get-AzureRmAutomationJob -Status Starting -ResourceGroupName $automationAccount.resourceGroupName -AutomationAccountName $automationAccount.automationAccountName).count
+            $jobCount += (Get-AzureRmAutomationJob -Status Queued -ResourceGroupName $automationAccount.resourceGroupName -AutomationAccountName $automationAccount.automationAccountName).count
+            $jobCount += (Get-AzureRmAutomationJob -Status Activating -ResourceGroupName $automationAccount.resourceGroupName -AutomationAccountName $automationAccount.automationAccountName).count
+            
+            Write-Output "Automation account has $jobCount jobs about to run or running."
+            # Check if total is less than maxJobsCount of the automation account
+            if ($jobCount -le $automationAccount.maxJobsCount)
+            {
+                Write-Output "Automation account $($automationAccount.automationAccountName) has $jobCount jobs about to run or running."
+                return $automationAccount
+            }
+        }
+
+        Start-Sleep -Seconds 600
+        $attempts++
     }
 
-    # returning the most available automation account
-    return ($copyAutomationAccountList | Sort-Object availableJobsCount -Descending)[0]
+    throw "Could not find any automation account of type $(AutomationAccountType) available at this time. If this error is becoming regular, it means it is time to increase the number of worker automation accounts."
+
 }
 
 function Update-AzureRmImgMgmtAutomationAccountAvailabilityCount
@@ -317,9 +339,8 @@ function Update-AzureRmImgMgmtAutomationAccountAvailabilityCount
         if ($AutomationAccount.availableJobsCount -gt $AutomationAccount.maxJobsCount) {$AutomationAccount.availableJobsCount=$AutomationAccount.maxJobsCount}
         Update-AzureStorageTableRow -table $table -entity $AutomationAccount
     }
-    catch [Microsoft.WindowsAzure.Storage.StorageException]
+    catch #[Microsoft.WindowsAzure.Storage.StorageException]
     {
-        Write-Output "Exception Microsoft.WindowsAzure.Storage.StorageException caught"
         if ($_.Exception.InnerException.RequestInformation.HttpStatusCode -eq 412)
         {
             Write-Output "Http Status Code => 412"
@@ -362,11 +383,6 @@ function Update-AzureRmImgMgmtAutomationAccountAvailabilityCount
         {
             throw $_    
         }
-    }
-    catch
-    {
-        Write-Output "Error not caught:`n $_"
-        throw $_
     }
 }
 
@@ -732,6 +748,70 @@ function Get-AzureRmImgMgmtLog
     }
 
     return (Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $log)
+
+}
+
+
+function Get-AzureRmImgMgmtJob
+{
+	<#
+	.SYNOPSIS
+		Gets job information.
+	.DESCRIPTION
+		Gets job information.
+    .PARAMETER ConfigFile
+        Setup config file that contains the configuration resource group, storage account and table name to access the logs.
+    .PARAMETER ConfigStorageAccountResourceGroupName
+        Resource Group name where the Azure Storage Account that contains the system configuration tables.
+    .PARAMETER ConfigStorageAccountName
+        Name of the Storage Account that contains the system configuration tables
+    .PARAMETER ConfigurationTableName
+        Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
+    .PARAMETER ConfigurationTable
+        Configuration table object.
+  	.EXAMPLE
+        # Example
+         Get-AzureRmImgMgmtJob -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 
+   	.EXAMPLE
+        # Example
+         Get-AzureRmImgMgmtJob -configurationTable $configTable
+	#>
+    # param(
+    #     [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+    #     [string]$ConfigStorageAccountResourceGroupName,
+
+    #     [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+    #     [string]$ConfigStorageAccountName,
+        
+    #     [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+    #     [AllowNull()]
+    #     [string]$ConfigurationTableName= "imageManagementConfiguration",
+
+    #     [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+    #     $configurationTable
+    # )
+
+    # if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
+    # {
+    #     $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+    # }
+     
+    # # Getting appropriate job table
+    # $jobTableInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
+
+    # if ($jobTableInfo -eq $null)
+    # {
+    #     throw "System configuration table does not contain configuartion item for job logging."
+    # }
+
+    # # Getting the Job table
+    # $jobTable = Get-AzureStorageTableTable -resourceGroup $jobTableInfo.resourceGroupName -StorageAccountName $jobTableInfo.storageAccountName -tableName $jobTableInfo.jobTableName
+
+    # $result = Get-AzureStorageTableRowAll -table $jobTable
+
+    # Update-TypeData -TypeName System.Numerics.Quaternion -MemberType AliasProperty -MemberName Real -Value X
+
+    # return ()
 
 }
 
