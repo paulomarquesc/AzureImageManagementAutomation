@@ -77,7 +77,7 @@ Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 $tempJobId = [guid]::newGuid().guid
 
 # Getting the configuration table
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
 if ($configurationTable -eq $null)
 {

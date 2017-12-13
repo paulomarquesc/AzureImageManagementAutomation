@@ -471,12 +471,18 @@ function New-AzureRmImgMgmtAutomationAccount
         # Creating schedule if needed
         if ((Get-ConfigValue $rb.scheduleName $config) -ne $null)
         {
+            $startTimeOffset = Get-ConfigValue $rb.startTimeOffset $config
+            if ($startTimeOffset -eq $null)
+            {
+                $startTimeOffset = 0
+            }
+
             $result = Get-AzureRmAutomationSchedule -Name (Get-ConfigValue $rb.scheduleName $config) -ResourceGroupName $resourceGroupName -AutomationAccountName $automationAccountName -ErrorAction SilentlyContinue
             if ($result -eq $null)
             {
                 # creating schedule
                 Write-Verbose "Creating schedule named $(Get-ConfigValue $rb.scheduleName $config)" -Verbose
-                New-AzureRmAutomationSchedule -AutomationAccountName $automationAccountName -Name (Get-ConfigValue $rb.scheduleName $config) -StartTime $(Get-Date).AddMinutes(10) -HourInterval (Get-ConfigValue $rb.scheduleHourInterval $config) -ResourceGroupName $resourceGroupName
+                New-AzureRmAutomationSchedule -AutomationAccountName $automationAccountName -Name (Get-ConfigValue $rb.scheduleName $config) -StartTime $(Get-Date).AddMinutes($startTimeOffset) -HourInterval (Get-ConfigValue $rb.scheduleHourInterval $config) -ResourceGroupName $resourceGroupName
             }
             
             $runbookParams = @{}
@@ -714,7 +720,8 @@ function Get-AzureRmImgMgmtLog
 
     if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
     {
-        $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+        #$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+        $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
     }
   
     # Getting appropriate log table
@@ -726,7 +733,8 @@ function Get-AzureRmImgMgmtLog
     }
 
     # Getting the Job Log table
-    $log = Get-AzureStorageTableTable -resourceGroup $logTableInfo.resourceGroupName -StorageAccountName $logTableInfo.storageAccountName -tableName $logTableInfo.jobLogTableName
+    #$log = Get-AzureStorageTableTable -resourceGroup $logTableInfo.resourceGroupName -StorageAccountName $logTableInfo.storageAccountName -tableName $logTableInfo.jobLogTableName
+    $log = Get-AzureRmImgMgmtTable  -ResourceGroup $logTableInfo.resourceGroupName -StorageAccountName $logTableInfo.storageAccountName -tableName $logTableInfo.jobLogTableName
 
     $filter = "(PartitionKey eq '$jobId')" 
     
@@ -916,9 +924,47 @@ function Get-AzureRmImgMgmtStorageContext
 
     if ($context -eq $null)
     {
-        $msg = "An error occured. Context object could not be retrieved from destination storage account $storageAccountName at resource group $resourceGroupName"
+        $msg = "An error occured. Context object could not be retrieved from storage account $storageAccountName at resource group $resourceGroupName"
         throw $msg
     }
 
     return $context
+}
+
+function Get-AzureRmImgMgmtTable
+{
+    param
+    (
+        [string]$ResourceGroup,
+        [string]$StorageAccountName,
+        [string]$TableName,
+        [int]$retry = 5,
+        [int]$retryWaitSeconds = 15
+    )
+
+    # Performing a loop to get the table
+    $retryCount = 0
+    while (($table -eq $null) -and ($retryCount -lt $retry))
+    {
+        try
+        {
+            $table = Get-AzureStorageTableTable -resourceGroup $ResourceGroup -StorageAccountName $StorageAccountName -tableName $TableName
+        }
+        catch
+        { 
+            # Avoiding temporary intermittence to make this fail
+        }
+        
+        Start-Sleep -Seconds 15
+        
+        $retryCount++
+    }
+
+    if ($table -eq $null)
+    {
+        $msg = "An error occured. Table object could not be retrieved from storage account $storageAccountName at resource group $resourceGroup"
+        throw $msg
+    }
+
+    return $table
 }

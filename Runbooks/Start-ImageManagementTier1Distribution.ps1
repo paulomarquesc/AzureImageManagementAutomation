@@ -88,7 +88,7 @@ Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 
 # Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD
 Write-Output "Obtaining the tier 0 storage account (the one that receives the vhd from on-premises) - Source of recently uploaded VHD" 
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
 if ($configurationTable -eq $null)
 {

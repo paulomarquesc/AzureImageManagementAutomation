@@ -81,14 +81,19 @@ catch
 }
 
 # Selecting tier 0 subscription
+Write-Output "Selecting tier 0 subscription $tier0SubscriptionId"
 Select-AzureRmSubscription -SubscriptionId $tier0SubscriptionId
 
 # Getting the configuration table
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+Write-Output "Getting the configuration table, resource group $ConfigStorageAccountResourceGroupName, storage account $configStorageAccountName, table name $configurationTableName"
 
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+
+Write-Output "VHD Details: $VhdDetails"
 $vhdInfo = $VhdDetails | ConvertFrom-Json
 
 # Getting the Job Log table
+Write-Output "Getting the Job Log table"
 $log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable
 
 $msg = "VHD information to create the image: $VhdDetails"

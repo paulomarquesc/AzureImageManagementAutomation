@@ -9,7 +9,10 @@ For detailed information on how to setup and use this solution, please refer to 
 * Removed the option to place back the messages in the queue in case of an error, this process should be a controlled process to avoid loops
 * Create a function called Get-AzureRmImgMgmtStorageContext in order to retry getting the storage context
 * Error 409 was not caught while starting the VHD copy 
-* Deleting messages from queue after they are dequeued, we don't want the messages randomly back to the queue if an error happens during processing  
+* Deleting messages from queue after they are dequeued, we don't want the messages randomly back to the queue if an error happens during processing
+* Created a new function to retry getting a table in this shared environment to increase reliability called Get-AzureRmImgMgmtTable
+* Included some more output on New-ImageManagementImage.ps1 runbook 
+* Included new parameter in the setup info file called  startTimeOffset (in minutes) related to each runbook where schedule applies, this will tell when to start, so Tier 2 copy will start 30 minutes before Image Creation, if attribute is missing it will default to 0 minutes
 
 ### Release 12/07/2017
 * Upated the UploadVHD.ps1 file to allow the VHD upload to the tier 0 storage account directly from a managed disk

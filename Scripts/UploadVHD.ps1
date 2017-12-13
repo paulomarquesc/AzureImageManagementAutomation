@@ -119,7 +119,7 @@ Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 Write-Verbose "Getting configuration information" -Verbose
 
 # Getting a reference to the configuration table
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
 # Getting appropriate job tables
 $jobTablesInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
@@ -130,8 +130,9 @@ if ($jobTablesInfo -eq $null)
 }
 
 # Getting the Job Submission and Job Log table
-$jobsTable = Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobTableName
-$log = Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName
+$jobsTable = Get-AzureRmImgMgmtTable -ResourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobTableName
+
+$log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable 
 
 $jobId = [guid]::NewGuid().guid
 

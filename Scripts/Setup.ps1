@@ -91,7 +91,7 @@ if ($saInfo -eq $null)
 Write-Verbose "Adding Tier 0 Information in the configuration table $(Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)"
 
 # Obtaining the tier 0 storage account (the one that receives the vhd from on-premises)
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $tier0StorageAccountRG -storageAccountName $tier0SaName -tableName (Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $tier0StorageAccountRG -StorageAccountName $tier0SaName -tableName (Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)
 
 $tier0StorageItem = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable
 
@@ -314,7 +314,6 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
                                             "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
                                             "applicationDisplayName"=$copyApplicationDisplayName;
                                             "type"="copyDedicated";
-                                            "availableJobsCount"=Get-ConfigValue $config.automationAccount.availableDedicatedCopyJobs $config;
                                             "maxJobsCount"=Get-ConfigValue $config.automationAccount.maxDedicatedCopyJobs $config;
                                             "location"=Get-ConfigValue $config.automationAccount.location $config;
                                             "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
@@ -361,7 +360,6 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
                                             "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
                                             "applicationDisplayName"=$imgApplicationDisplayName;
                                             "type"="ImageCreationDedicated";
-                                            "availableJobsCount"=Get-ConfigValue $config.automationAccount.availableDedicatedImageCreationJobs $config;
                                             "maxJobsCount"=Get-ConfigValue $config.automationAccount.maxDedicatedImageCreationJobs $config;
                                             "location"=Get-ConfigValue $config.automationAccount.location $config;
                                             "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}

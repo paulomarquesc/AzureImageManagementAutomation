@@ -73,13 +73,10 @@ write-output "Selecting Tier 0 subscription $Tier0SubscriptionId"
 Select-AzureRmSubscription -SubscriptionId $Tier0SubscriptionId
 
 # Getting the configuration table
-$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 
 # Getting the Job Log table
 $log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable
-
-$msg = " Getting a VHD to process"
-Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 # Getting a VHD to process
 $queueInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable 
@@ -95,25 +92,28 @@ while ($vhdToProcess -ne $null)
     # Deleting the message from queue - we don't place it back if an error happens
     Remove-AzureRmStorageQueueMessage -queue $imgQueue -message $vhdToProcess
 
+    $vhdInfo = $vhdToProcess.AsString | ConvertFrom-Json
+    $jobId = $vhdInfo.JobId
+
     $msg = "Processing image queue message message $($vhdToProcess.AsString)"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     try
     {
         $msg = "Getting available automation accounts"
-        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
         $automationAccount = Get-AzureRmImgMgmtAvailableAutomationAccount -table $configurationTable -AutomationAccountType "ImageCreationDedicated" 
     }
     catch
     {
         $msg = "An error ocurred: $_"
-        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
         break
     }
 
     $msg = "Using automation account $($automationAccount.automationAccountName)"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     # Parameters to be passed on to the runbook
     $params = @{"VhdDetails"=$vhdToProcess.AsString;
@@ -125,10 +125,10 @@ while ($vhdToProcess -ne $null)
                 "Tier0SubscriptionId"=$tier0SubscriptionId}
 
     $msg = "Data being passed to New-ImageManagementImage runbook: $($params | convertto-json -Compress)"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     $msg = "Starting runbook New-ImageManagementImage "
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     Start-AzureRmAutomationRunbook -Name "New-ImageManagementImage" `
                                     -Parameters $params `
@@ -139,7 +139,7 @@ while ($vhdToProcess -ne $null)
     Start-Sleep -Seconds 30
 
     $msg = "Get next message in the queue"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $imgQueue
 }
