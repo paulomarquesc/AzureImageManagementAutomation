@@ -118,11 +118,16 @@ else
 $msg = "Getting tier 0 storage account $($tier0StorageAccount.storageAccountName) context from resource group $($tier0StorageAccount.resourceGroupName)" 
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-$sourceContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccount.resourceGroupName -Name $tier0StorageAccount.storageAccountName).Context
-if ($sourceContext -eq $null)
+try
 {
-    $msg = "Context object could not be retrieved from tier 0 storage account $($tier0StorageAccount.storageAccountName) at resource group $($tier0StorageAccount.resourceGroupName)"
+    $sourceContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $tier0StorageAccount.resourceGroupName `
+                                                    -StorageAccountName $tier0StorageAccount.storageAccountName
+}
+catch
+{
+    $msg = "An error occured getting the storage context.`nError: $_"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
     throw $msg
 }
 

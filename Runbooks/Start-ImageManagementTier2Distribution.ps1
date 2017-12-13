@@ -148,15 +148,30 @@ $copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccou
 $msg = "Getting source storage (tier0) account context"
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-$sourceContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccount.resourceGroupName -Name $tier0StorageAccount.storageAccountName).Context
+try
+{
+    $sourceContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $tier0StorageAccount.resourceGroupName `
+                                                    -StorageAccountName $tier0StorageAccount.storageAccountName
+}
+catch
+{
+    $msg = "An error occured getting the storage context.`nError: $_"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+    throw $msg
+}
 
 $msg = "Checking queue for a vhd to process"
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
+# Dequeing a copy job
 $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $copyQueue
 
 while ($vhdToProcess -ne $null)
 {
+    # Deleting the message from queue - we don't place it back if an error happens
+    Remove-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdToProcess
+
     $msg = "Processing message from queue $($vhdToProcess.AsString)"
     
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
@@ -256,7 +271,8 @@ while ($vhdToProcess -ne $null)
 
     $msg = "Checking queue for new vhd copy process job"
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-    Start-Sleep -Seconds 30
+
+    Start-Sleep -Seconds 60
     $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $copyQueue
 }
 

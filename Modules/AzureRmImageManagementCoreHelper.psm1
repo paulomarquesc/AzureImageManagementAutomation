@@ -195,11 +195,13 @@ function Start-AzureRmImgMgmtVhdCopy
         [string]$destBlobName,
 
         [Parameter(Mandatory=$false)]
-        [int]$RetryCountMax = 180,
+        [int]$RetryCountMax = 90,
         
         [Parameter(Mandatory=$false)]
         [int]$RetryWaitTime = 60
     )
+
+    $retryCount = 0
 
     try
     {
@@ -212,12 +214,12 @@ function Start-AzureRmImgMgmtVhdCopy
             -DestBlob $destBlobName `
             -Force
     }
-    catch [Microsoft.WindowsAzure.Storage.StorageException]
+    catch
     {
         # Error 409 There is currently a pending copy operation.
         if ($_.Exception.InnerException.RequestInformation.HttpStatusCode -eq 409)
         {
-            while ($retryCount -le $RetryCountMax) # Maximum 3 hours retry time to avoid endless loop
+            while ($retryCount -le $RetryCountMax)
             {
                 write-output "Error 409 - There is currently a pending copy operation error, retry attempt $retryCount " 
                 
@@ -246,12 +248,6 @@ function Start-AzureRmImgMgmtVhdCopy
             throw $_
         }
     }
-    catch 
-    {
-        Write-Output "Error not caught:`n $_"
-        throw $_
-    }
-    
 }
 
 function Get-AzureRmImgMgmtAvailableAutomationAccount
@@ -814,8 +810,6 @@ function Get-AzureRmImgMgmtJob
     # return ()
 
 }
-
-
 function Get-AzureRmImgMgmtLogTable
 {
     param
@@ -836,7 +830,6 @@ function Get-AzureRmImgMgmtLogTable
     return (Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName)
 
 }
-
 function Update-AzureRmImgMgmtLogJobId
 {
     # This function replaces the Partition Key of a given specific Partition Key with a new Partition Key
@@ -893,6 +886,39 @@ function Remove-AzureRmImgMgmtLogTemporaryJobIdEntry
         Remove-AzureStorageTableRow -table $logTable -entity $item
     }
 }
+function Get-AzureRmImgMgmtStorageContext
+{
+    param
+    (
+        [string]$ResourceGroupName,
+        [string]$StorageAccountName,
+        [int]$retry = 5,
+        [int]$retryWaitSeconds = 15
+    )
 
+    # Performing a loop to get the destination context with 5 attempts
+    $retryCount = 0
+    while (($context -eq $null) -and ($retryCount -lt $retry))
+    {
+        try
+        {
+            $context = (Get-AzureRmStorageAccount -ResourceGroupName $resourceGroupName -Name $storageAccountName).Context
+        }
+        catch
+        { 
+            # Avoiding temporary intermittence to make this fail
+        }
+        
+        Start-Sleep -Seconds 15
+        
+        $retryCount++
+    }
 
+    if ($context -eq $null)
+    {
+        $msg = "An error occured. Context object could not be retrieved from destination storage account $storageAccountName at resource group $resourceGroupName"
+        throw $msg
+    }
 
+    return $context
+}

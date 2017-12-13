@@ -257,7 +257,18 @@ else
     $msg = "Getting tier 0 (destination) context"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-    $destContext = (Get-AzureRmStorageAccount -ResourceGroupName $tier0StorageAccount.resourceGroupName -Name $tier0StorageAccount.storageAccountName).Context
+    try
+    {
+        $destContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $tier0StorageAccount.resourceGroupName `
+                                                        -StorageAccountName $tier0StorageAccount.storageAccountName
+    }
+    catch
+    {
+        $msg = "An error occured getting the storage context.`nError: $_"
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+        throw $msg
+    }
 
     # Check if destination container exists
     $destContainer = Get-AzureStorageContainer -Name $tier0StorageAccount.container -Context $destContext -ErrorAction SilentlyContinue

@@ -92,6 +92,9 @@ $vhdToProcess = Invoke-AzureRmStorageQueueGetMessage -queue $imgQueue
 
 while ($vhdToProcess -ne $null)
 {
+    # Deleting the message from queue - we don't place it back if an error happens
+    Remove-AzureRmStorageQueueMessage -queue $imgQueue -message $vhdToProcess
+
     $msg = "Processing image queue message message $($vhdToProcess.AsString)"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 

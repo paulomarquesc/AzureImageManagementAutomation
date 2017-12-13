@@ -4,6 +4,13 @@ For detailed information on how to setup and use this solution, please refer to 
 
 ## Release Notes
 
+### Release 12/13/2017
+* Improved control over how many jobs are running/about to run under an automation account
+* Removed the option to place back the messages in the queue in case of an error, this process should be a controlled process to avoid loops
+* Create a function called Get-AzureRmImgMgmtStorageContext in order to retry getting the storage context
+* Error 409 was not caught while starting the VHD copy 
+* Deleting messages from queue after they are dequeued, we don't want the messages randomly back to the queue if an error happens during processing  
+
 ### Release 12/07/2017
 * Upated the UploadVHD.ps1 file to allow the VHD upload to the tier 0 storage account directly from a managed disk
 * Updated troubleshoot guide due to the change in AzureRmStorageTable related to system default entity attribute called Timestamp that was renamed to TableTimestamp due to conflicts when customers already have a custom attribute with same name

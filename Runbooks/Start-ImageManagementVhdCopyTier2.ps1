@@ -123,56 +123,43 @@ $msg = "Getting source context object for tier 2 copy -> Subscription: $($Source
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
 # Getting source context object
-$sourceContext = (Get-AzureRmStorageAccount -ResourceGroupName $SourceStorageAccount.resourceGroupName -Name $SourceStorageAccount.storageAccountName).Context
-if ($sourceContext -eq $null)
-{
-    $msg = "An error ocurred. Context object could not be retrieved from source storage account $($SourceStorageAccount.storageAccountName) at resource group $($SourceStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
-
-    throw "Context object could not be retrieved from source storage account $($SourceStorageAccount.storageAccountName) at resource group $($SourceStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
-}
-
-# Getting destination context
-
 try
 {
-    Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId 
-
-    # Performing a loop to get the destination context with 3 attempts
-    $retryCount = 0
-    while (($destContext -eq $null) -and ($retryCount -lt 3))
-    {
-        $msg = "Getting destination context object for tier 2 copy (attempt $retryCount) -> Subscription: $($DestinationStorageAccount.SubscriptionId) DestStorageAccount: $($DestinationStorageAccount.storageAccountName) DestStorageAccountResourceGroup $($DestinationStorageAccount.resourceGroupName)"
-        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
-        try
-        {
-            $destContext = (Get-AzureRmStorageAccount -ResourceGroupName $DestinationStorageAccount.resourceGroupName -Name $DestinationStorageAccount.storageAccountName).Context
-        }
-        catch
-        { 
-            # Avoiding temporary intermittence to make this fail
-        }
-        
-        Start-Sleep -Seconds 15
-        
-        $retryCount += 1
-    }
-
-    if ($destContext -eq $null)
-    {
-        $msg = "An error occured. Context object could not be retrieved from destination storage account $($DestinationStorageAccount.storageAccountName) at resource group $($DestinationStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
-        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
-    
-        throw "Context object could not be retrieved from destination storage account $($DestinationStorageAccount.storageAccountName) at resource group $($DestinationStorageAccount.resourceGroupName) at subscription $($SourceStorageAccount.SubscriptionId)"
-    }
+    $sourceContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $SourceStorageAccount.resourceGroupName  `
+                                                    -StorageAccountName $SourceStorageAccount.storageAccountName
 }
 catch
 {
-    $msg = "An error occured selecting the destination subscription or getting the storage context.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
+    $msg = "An error occured getting the storage context.`nError: $_"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
 
-    throw "An error occured selecting the destination subscription or getting the storage context.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
+    throw $msg
+}
+
+# Getting destination context
+try
+{
+    Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId 
+}
+catch
+{
+    $msg = "An error occured selecting the destination subscription.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+    throw $msg
+}
+
+try
+{
+    $destContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $DestinationStorageAccount.resourceGroupName `
+                                                    -StorageAccountName $DestinationStorageAccount.storageAccountName
+}
+catch
+{
+    $msg = "An error occured getting the storage context.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+    throw $msg
 }
 
 # Check container and create if does not exist
