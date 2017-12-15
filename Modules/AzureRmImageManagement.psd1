@@ -19,7 +19,7 @@ Description = 'Sample PowerShell Module that contains core functions related to 
 HelpInfoUri = ''
 
 # Version number of this module
-ModuleVersion = '1.0.0.20'
+ModuleVersion = '1.0.0.21'
 
 # Minimum version of the Windows PowerShell engine required by this module
 PowerShellVersion = '5.0'

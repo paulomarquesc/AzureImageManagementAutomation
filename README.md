@@ -4,9 +4,12 @@ For detailed information on how to setup and use this solution, please refer to 
 
 ## Release Notes
 
-### Release 12/14/2017
+### Release 12/15/2017
 * Fixed 15 seconds delay each time a table is referenced
 * Implemented job status retrieval capability with  cmdlet Get-AzureRmImgMgmtJobStatus
+* Increasing retries to 10 every 30 seconds by default on Get-AzureRmImgMgmtStorageContext and Get-AzureRmImgMgmtTable
+* Placed a null test inside the loop when getting the context on Get-AzureRmImgMgmtStorageContext so there is no wait if the context is already obtained
+* Job Status object ImageMgmtJobStatus now have a list of errors at ErrorLog property
 
 ### Release 12/14/2017
 * Changed the output of Get-AzureRmImgMgmtLog to return JobId and Timestamp as propoerty names instead of PartitionKey and TableTimestamp

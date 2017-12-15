@@ -119,10 +119,10 @@ if ($configurationTable -eq $null)
 # Getting the Job Log table
 $log =  Get-AzureRmImgMgmtLogTable -configurationTable $configurationTable 
 
+# Getting source context object
 $msg = "Getting source context object for tier 2 copy -> Subscription: $($SourceStorageAccount.SubscriptionId) SourceStorageAccount: $($SourceStorageAccount.storageAccountName) SourceStorageAccountResourceGroup $($SourceStorageAccount.resourceGroupName)"
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-# Getting source context object
 try
 {
     $sourceContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $SourceStorageAccount.resourceGroupName  `
@@ -137,6 +137,9 @@ catch
 }
 
 # Getting destination context
+$msg = "Getting source context object for tier 2 copy -> Subscription: $($SourceStorageAccount.SubscriptionId) SourceStorageAccount: $($SourceStorageAccount.storageAccountName) SourceStorageAccountResourceGroup $($SourceStorageAccount.resourceGroupName)"
+Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 try
 {
     Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId 
