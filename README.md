@@ -4,6 +4,14 @@ For detailed information on how to setup and use this solution, please refer to 
 
 ## Release Notes
 
+### Release 12/14/2017
+* Fixed 15 seconds delay each time a table is referenced
+* Implemented job status retrieval capability with  cmdlet Get-AzureRmImgMgmtJobStatus
+
+### Release 12/14/2017
+* Changed the output of Get-AzureRmImgMgmtLog to return JobId and Timestamp as propoerty names instead of PartitionKey and TableTimestamp
+* Created a cmdlet to get submitted jobs called Get-AzureRmImgMgmtJob
+
 ### Release 12/13/2017
 * Improved control over how many jobs are running/about to run under an automation account
 * Removed the option to place back the messages in the queue in case of an error, this process should be a controlled process to avoid loops

@@ -47,7 +47,9 @@ FunctionsToExport = @(  'Start-AzureRmImgMgmtVhdCopy',
                         'Update-AzureRmImgMgmtLogJobId',
                         'Remove-AzureRmImgMgmtLogTemporaryJobIdEntry',
                         'Get-AzureRmImgMgmtStorageContext',
-                        'Get-AzureRmImgMgmtTable')
+                        'Get-AzureRmImgMgmtTable',
+                        'Get-AzureRmImgMgmtJob',
+                        'Get-AzureRmImgMgmtJobStatus')
 
 VariablesToExport = ''
 

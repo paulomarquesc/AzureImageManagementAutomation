@@ -33,6 +33,7 @@ enum status
 enum steps
 {
     upload
+    uploadConcluded
     tier1Distribution
     tier2Distribution
     imageCreation
@@ -49,19 +50,66 @@ enum storageAccountTier
     none
 }
 
-# # Classes
-# class JobStatus
-# {
-#     [int]$expectedItems=0
-#     [status]$uploadStatus=[status]::NotStarted
-#     [status]$tier1Distribution=[status]::NotStarted
-#     [status]$tier2Distribution=[status]::NotStarted
-#     [status]$imageCreation=[status]::NotStarted
-#     [dateTime]$uploadCompletionTimeUTC
-#     [dateTime]$tier1DistributionCompletionTimeUTC
-#     [dateTime]$tier2DistributionCompletionTimeUTC
-#     [double]$totalJobElapsedTime=0
-# }
+class ImageMgmtJob
+{
+    [string]$JobId
+    [dateTime]$SubmissionDate
+    [string]$Description
+    [string]$VhdName
+    [string]$ImageName
+    [string]$OsType
+  
+    ImageMgmtJob() {}
+
+    ImageMgmtJob( [string]$jobId, [dateTime]$submissionDate, [string]$description, [string]$vhdName, [string]$imageName, [string]$osType ) {
+        $this.jobId = $jobId
+        $this.submissionDate = $submissionDate
+        $this.description = $description
+        $this.vhdName = $vhdName
+        $this.imageName = $imageName
+        $this.osType = $osType
+    }
+}
+
+class ImageMgmtJobStatus : ImageMgmtJob
+{
+    [int]$UploadCompletion
+    [int]$Tier1CopyCompletion
+    [int]$Tier2CopyCompletion
+    [int]$ImageCreationCompletion
+    [int]$ErrorCount
+
+    ImageMgmtJobStatus() {}
+
+    ImageMgmtJobStatus([string]$jobId, [dateTime]$submissionDate, [string]$description, [string]$vhdName, [string]$imageName, [string]$osType, [int]$uploadCompletion, [int]$tier1CopyCompletion,  [int]$tier2CopyCompletion, [int]$imageCreationCompletion, [int]$errorCount) {
+        $this.jobId = $jobId
+        $this.submissionDate = $submissionDate
+        $this.vhdName = $vhdName
+        $this.imageName = $imageName
+        $this.osType = $osType
+        $this.uploadCompletion = $uploadCompletion
+        $this.tier1CopyCompletion = $tier1CopyCompletion
+        $this.tier2CopyCompletion = $tier2CopyCompletion
+        $this.imageCreationCompletion = $imageCreationCompletion
+        $this.errorCount = $errorCount
+    }
+
+    [bool] isCompleted() {
+       if ( ($this.uploadCompletion -eq 100) -and `
+            ($this.tier1CopyCompletion -eq 100) -and `
+            ($this.tier2CopyCompletion -eq 100) -and `
+            ($this.imageCreationCompletion -eq 100) -and `
+            ($this.errorCount -eq 0) )
+        {
+            return $true
+        }
+        else
+        {
+            return $false    
+        }
+    }
+}
+
 
 class StorageAccountName
 {
@@ -715,12 +763,13 @@ function Get-AzureRmImgMgmtLog
 
         [Parameter(Mandatory=$false)]
         [AllowNull()]    
-        [steps]$step
+        [steps]$step,
+
+        [switch]$useDefaultColumns
     )
 
     if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
     {
-        #$configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
         $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
     }
   
@@ -733,7 +782,6 @@ function Get-AzureRmImgMgmtLog
     }
 
     # Getting the Job Log table
-    #$log = Get-AzureStorageTableTable -resourceGroup $logTableInfo.resourceGroupName -StorageAccountName $logTableInfo.storageAccountName -tableName $logTableInfo.jobLogTableName
     $log = Get-AzureRmImgMgmtTable  -ResourceGroup $logTableInfo.resourceGroupName -StorageAccountName $logTableInfo.storageAccountName -tableName $logTableInfo.jobLogTableName
 
     $filter = "(PartitionKey eq '$jobId')" 
@@ -751,10 +799,23 @@ function Get-AzureRmImgMgmtLog
         }
     }
 
-    return (Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $log)
+    $result = Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $log
 
+    if (-not $useDefaultColumns)
+    {
+        if ($result -ne $null)
+        {
+            $result = $result  |  Select-Object @{N='JobId';E={$_.PartitionKey}}, `
+                                                @{N='TimeStamp';E={$_.TableTimestamp}}, `
+                                                @{N='Step';E={$_.step}}, `
+                                                @{N='ModuleName';E={$_.moduleName}}, `
+                                                @{N='LogLevel';E={$_.logLevel}}, `
+                                                @{N='Message';E={$_.message}}
+        }
+    }
+
+    return $result
 }
-
 
 function Get-AzureRmImgMgmtJob
 {
@@ -779,44 +840,55 @@ function Get-AzureRmImgMgmtJob
    	.EXAMPLE
         # Example
          Get-AzureRmImgMgmtJob -configurationTable $configTable
-	#>
-    # param(
-    #     [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
-    #     [string]$ConfigStorageAccountResourceGroupName,
+    #>
+    
+    param(
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountResourceGroupName,
 
-    #     [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
-    #     [string]$ConfigStorageAccountName,
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountName,
         
-    #     [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
-    #     [AllowNull()]
-    #     [string]$ConfigurationTableName= "imageManagementConfiguration",
+        [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+        [AllowNull()]
+        [string]$ConfigurationTableName= "imageManagementConfiguration",
 
-    #     [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
-    #     $configurationTable
-    # )
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+        $configurationTable,
 
-    # if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
-    # {
-    #     $configurationTable = Get-AzureStorageTableTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
-    # }
+        [switch]$useDefaultColumns
+    )
+
+    if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
+    {
+        $configurationTable = Get-AzureRmImgMgmtTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+    }
      
-    # # Getting appropriate job table
-    # $jobTableInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
+    # Getting appropriate job table
+    $jobTableInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "PartitionKey eq 'logConfiguration'" -table $configurationTable
 
-    # if ($jobTableInfo -eq $null)
-    # {
-    #     throw "System configuration table does not contain configuartion item for job logging."
-    # }
+    if ($jobTableInfo -eq $null)
+    {
+        throw "System configuration table does not contain configuartion item for job logging."
+    }
 
-    # # Getting the Job table
-    # $jobTable = Get-AzureStorageTableTable -resourceGroup $jobTableInfo.resourceGroupName -StorageAccountName $jobTableInfo.storageAccountName -tableName $jobTableInfo.jobTableName
+    # Getting the Job table
+    $jobTable = Get-AzureRmImgMgmtTable -resourceGroup $jobTableInfo.resourceGroupName -StorageAccountName $jobTableInfo.storageAccountName -tableName $jobTableInfo.jobTableName
 
-    # $result = Get-AzureStorageTableRowAll -table $jobTable
+    $rawResult = Get-AzureStorageTableRowAll -table $jobTable
 
-    # Update-TypeData -TypeName System.Numerics.Quaternion -MemberType AliasProperty -MemberName Real -Value X
+    $resultList = @()
 
-    # return ()
+    if ($rawResult -ne $null)
+    {
+        foreach ($result in $rawResult)
+        {
+            $vhdInfo = $result.vhdInfo | ConvertFrom-Json
+            $resultList += [ImageMgmtJob]::New($result.RowKey,$result.submissionDate,$result.description,$vhdInfo.vhdName,$vhdInfo.imageName, $vhdInfo.osType)
+        }
+    }
 
+    return ,$resultList
 }
 function Get-AzureRmImgMgmtLogTable
 {
@@ -835,7 +907,7 @@ function Get-AzureRmImgMgmtLogTable
     }
 
     # Getting the Job Log table
-    return (Get-AzureStorageTableTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName)
+    return (Get-AzureRmImgMgmtTable -resourceGroup $jobTablesInfo.resourceGroupName -StorageAccountName $jobTablesInfo.storageAccountName -tableName $jobTablesInfo.jobLogTableName)
 
 }
 function Update-AzureRmImgMgmtLogJobId
@@ -948,16 +1020,18 @@ function Get-AzureRmImgMgmtTable
     {
         try
         {
-            $table = Get-AzureStorageTableTable -resourceGroup $ResourceGroup -StorageAccountName $StorageAccountName -tableName $TableName
+            $table = Get-AzureStorageTableTable -resourceGroup $ResourceGroup -StorageAccountName $StorageAccountName -tableName $TableName -ErrorAction SilentlyContinue
         }
         catch
         { 
             # Avoiding temporary intermittence to make this fail
         }
         
-        Start-Sleep -Seconds 15
-        
-        $retryCount++
+        if ($table -eq $null)
+        {
+            Start-Sleep -Seconds 15
+            $retryCount++
+        }
     }
 
     if ($table -eq $null)
@@ -967,4 +1041,139 @@ function Get-AzureRmImgMgmtTable
     }
 
     return $table
+}
+
+function Get-AzureRmImgMgmtJobStatus
+{
+    <#
+	.SYNOPSIS
+		Gets job status information.
+	.DESCRIPTION
+		Gets job status information.
+    .PARAMETER ConfigFile
+        Setup config file that contains the configuration resource group, storage account and table name to access the logs.
+    .PARAMETER ConfigStorageAccountResourceGroupName
+        Resource Group name where the Azure Storage Account that contains the system configuration tables.
+    .PARAMETER ConfigStorageAccountName
+        Name of the Storage Account that contains the system configuration tables
+    .PARAMETER ConfigurationTableName
+        Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
+    .PARAMETER ConfigurationTable
+        Configuration table object.
+    .PARAMETER Job
+        Job object obained using Get-AzureRmImgMgmtJob cmdlet.
+  	.EXAMPLE
+        # Example
+
+        # Getting Job List
+        $jobs = Get-AzureRmImgMgmtJob -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $ConfigStorageAccountName
+
+        # Getting Job status for the first Job in the returned list
+        $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $ConfigStorageAccountName -job $jobs[0]
+        $status
+
+        # Output of status ImageMgmtJobStatus object
+        #
+        # UploadCompletion        : 100
+        # Tier1CopyCompletion     : 100
+        # Tier2CopyCompletion     : 100
+        # ImageCreationCompletion : 100
+        # ErrorCount              : 0
+        # JobId                   : 0ab871dc-3da2-4502-81e5-64b9ef84c639
+        # SubmissionDate          : 12/13/2017 8:30:05 PM
+        # Description             : 
+        # VhdName                 : centos-golden-image.vhd
+        # ImageName               : myCentosImage-v2
+        # OsType                  : Linux
+
+        # Is Completed?
+        $status.isCompleted()
+
+        # Output
+        # True
+    #>
+    
+    param(
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountResourceGroupName,
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountName,
+        
+        [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+        [AllowNull()]
+        [string]$ConfigurationTableName= "imageManagementConfiguration",
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+        $configurationTable,
+
+        [Parameter(Mandatory=$true)]
+        $job
+    )
+
+    # Validating job object
+    if ($job.GetType().Name -ne "ImageMgmtJob")
+    {
+        throw "Argument Job is not of type 'ImageMgmtJob'. Cmdlet will stop processing."
+    }
+
+    if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
+    {
+        $configurationTable = Get-AzureRmImgMgmtTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+    }
+
+    $totalActivities = 7
+    $activityCount = 1
+    # Retrieve number of Tier 1 blobs
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Retrieving number of tier 1 blobs" -PercentComplete (($activityCount/$totalActivities)*100)
+    $tier0StorageAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable
+    if ($tier0StorageAccount -eq $null)
+    {
+        throw "Tier 0 Storage Account could not be retrieved from configuration table: resourceGroup $ConfigStorageAccountResourceGroupName, storageAccount $configStorageAccountName, tableName $configurationTableName"
+    }
+    [int]$tier1Copies = $tier0StorageAccount.tier1Copies
+
+    # Retrieve tier 2 Storage Accounts - this dictates how many VHD copies and how many images we will have at the end of the process
+    $activityCount++
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Retrieving tier 2 Storage Accounts" -PercentComplete (($activityCount/$totalActivities)*100)
+    $tier2StorageAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
+
+    if ($tier2StorageAccountList -eq $null)
+    {
+        throw "Tier 2 Storage Account list could not be retrieved from configuration table: resourceGroup $ConfigStorageAccountResourceGroupName, storageAccount $configStorageAccountName, tableName $configurationTableName"
+    }
+    $tier2StorageAccountCt = $tier2StorageAccountList.count
+
+    # Gathering information from log table
+    $activityCount++
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering upload information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
+    $uploadInfo = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step uploadConcluded -useDefaultColumns
+
+    $activityCount++
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering tier1 copy completion information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
+    $tier1Info = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step tier1DistributionCopyConcluded -useDefaultColumns
+
+    $activityCount++
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering tier2 copy completion information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
+    $tier2Info = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step tier2DistributionCopyConcluded -useDefaultColumns
+
+    $activityCount++
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering image creation completion information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
+    $imageInfo = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step imageCreationConcluded -useDefaultColumns
+
+    # Getting error messages count
+    $activityCount++
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering error information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
+    $errorMessages = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId  -Level Error -useDefaultColumns
+
+    # ImageMgmtJobStatus([string]$jobId, [dateTime]$submissionDate, [string]$description, [string]$vhdName, [string]$imageName, [string]$osType, [int]$uploadCompletion, [int]$tier1CopyCompletion,  [int]$tier2CopyCompletion, [int]$imageCreationCompletion, [int]$errorCount) {
+    [int]$uploadCompletion =  ($uploadInfo.count/1) * 100
+    [int]$tier1CopyCompletion = ($tier1Info.count/$tier1Copies) * 100
+    [int]$tier2CopyCompletion = ($tier2Info.count/$tier2StorageAccountCt) * 100
+    [int]$imageCreationCompletion = ($imageInfo.count/$tier2StorageAccountCt) * 100
+
+    Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Completed
+    
+    return ([ImageMgmtJobStatus]::New($job.jobId, $job.SubmissionDate, $job.Description, $job.VhdName, $job.ImageName, $job.OsType,$uploadCompletion,$tier1CopyCompletion,$tier2CopyCompletion,$imageCreationCompletion, $errorMessages.Count))
+
 }

@@ -297,6 +297,10 @@ else
 
 }
 
+# Log upload concluded
+$msg = "Upload of VHD $vhdName concluded"
+Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::uploadConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 # Getting Main Automation Account information
 Write-Verbose "Initiating process to create the tier 1 copies (multiple copies of the blob in tier 0 storage account)" -Verbose
 $msg = "Getting Main Automation Account information"
