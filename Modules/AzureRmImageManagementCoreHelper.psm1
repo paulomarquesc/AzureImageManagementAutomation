@@ -820,18 +820,6 @@ function Get-AzureRmImgMgmtLog
     {
         $resultList += [ImageMgmtLog]::New($result.RowKey,$result.tableTimestamp.DateTime,$result.step,$result.moduleName,$result.logLevel, $result.message)
     }
-    # if (-not $useDefaultColumns)
-    # {
-    #     if ($result -ne $null)
-    #     {
-    #         $result = $result  |  Select-Object @{N='JobId';E={$_.PartitionKey}}, `
-    #                                             @{N='TimeStamp';E={$_.TableTimestamp}}, `
-    #                                             @{N='Step';E={$_.step}}, `
-    #                                             @{N='ModuleName';E={$_.moduleName}}, `
-    #                                             @{N='LogLevel';E={$_.logLevel}}, `
-    #                                             @{N='Message';E={$_.message}}
-    #     }
-    # }
 
     return ,$resultList
 }
@@ -843,8 +831,6 @@ function Get-AzureRmImgMgmtJob
 		Gets job information.
 	.DESCRIPTION
 		Gets job information.
-    .PARAMETER ConfigFile
-        Setup config file that contains the configuration resource group, storage account and table name to access the logs.
     .PARAMETER ConfigStorageAccountResourceGroupName
         Resource Group name where the Azure Storage Account that contains the system configuration tables.
     .PARAMETER ConfigStorageAccountName
@@ -853,6 +839,8 @@ function Get-AzureRmImgMgmtJob
         Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
     .PARAMETER ConfigurationTable
         Configuration table object.
+    .PARAMETER JobId
+        Optional string that represents the JobId, if empty or null all jobs gets returned
   	.EXAMPLE
         # Example
          Get-AzureRmImgMgmtJob -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 
@@ -875,6 +863,10 @@ function Get-AzureRmImgMgmtJob
         [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
         $configurationTable,
 
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]
+        [string]$JobId,
+
         [switch]$useDefaultColumns
     )
 
@@ -895,7 +887,15 @@ function Get-AzureRmImgMgmtJob
     $jobTable = Get-AzureRmImgMgmtTable -resourceGroup $jobTableInfo.resourceGroupName -StorageAccountName $jobTableInfo.storageAccountName -tableName $jobTableInfo.jobTableName
 
     $rawResult = @()
-    $rawResult += Get-AzureStorageTableRowAll -table $jobTable
+    if ([string]::IsNullOrEmpty($JobId))
+    {
+        $rawResult += Get-AzureStorageTableRowAll -table $jobTable
+    }
+    else
+    {
+        $filter = "(RowKey eq '$jobId')" 
+        $rawResult += Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $jobTable 
+    }
 
     $resultList = @()
 
@@ -908,7 +908,15 @@ function Get-AzureRmImgMgmtJob
         }
     }
 
-    return ,$resultList
+    if ([string]::IsNullOrEmpty($JobId))
+    {
+        return ,$resultList
+    }
+    else
+    {
+        return $resultList
+    }
+    
 }
 function Get-AzureRmImgMgmtLogTable
 {
@@ -1131,14 +1139,14 @@ function Get-AzureRmImgMgmtJobStatus
         [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
         $configurationTable,
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         $job
     )
 
     # Validating job object
     if ($job.GetType().Name -ne "ImageMgmtJob")
     {
-        throw "Argument Job is not of type 'ImageMgmtJob'. Cmdlet will stop processing."
+        throw "Argument Job is not of type 'ImageMgmtJob'. Current type is $($job.GetType().Name)."
     }
 
     if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
@@ -1207,4 +1215,92 @@ function Get-AzureRmImgMgmtJobStatus
     
     return $result
 
+}
+
+function Remove-AzureRmImgMgmtJobBlob
+{
+    <#
+	.SYNOPSIS
+		Removes blobs related to a specified job.
+	.DESCRIPTION
+		Removes blobs related to a specified job.
+    .PARAMETER ConfigFile
+        Setup config file that contains the configuration resource group, storage account and table name to access the logs.
+    .PARAMETER ConfigStorageAccountResourceGroupName
+        Resource Group name where the Azure Storage Account that contains the system configuration tables.
+    .PARAMETER ConfigStorageAccountName
+        Name of the Storage Account that contains the system configuration tables
+    .PARAMETER ConfigurationTableName
+        Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
+    .PARAMETER ConfigurationTable
+        Configuration table object.
+    .PARAMETER Job
+        Job object obained using Get-AzureRmImgMgmtJob cmdlet.
+  	.EXAMPLE
+        $configTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $ConfigStorageAccountName -TableName imagemanagementconfiguration
+        Get-AzureRmImgMgmtJob -configurationTable $configTable 
+        $job = Get-AzureRmImgMgmtJob -configurationTable $configTable -JobId "7a9823e9-4b64-4a70-bab6-b13ddef7092b"  
+        Remove-AzureRmImgMgmtJobBlob -configurationTable $configTable -job $job
+    #>
+    
+    param(
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountResourceGroupName,
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountName,
+        
+        [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+        [AllowNull()]
+        [string]$ConfigurationTableName= "imageManagementConfiguration",
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+        $configurationTable,
+
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        $job
+    )
+
+    # Validating job object
+    if ($job.GetType().Name -ne "ImageMgmtJob")
+    {
+        throw "Argument Job is not of type 'ImageMgmtJob'. Current type is $($job.GetType().Name)."
+    }
+
+    if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
+    {
+        $configurationTable = Get-AzureRmImgMgmtTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+    }
+    
+    # Removing blobs
+
+    # Getting all storage accounts
+    $storageAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and ((tier eq 0) or (tier eq 2))" -table $configurationTable | Sort-Object -Property tier
+
+    foreach ($storageAccount in $storageAccountList)
+    {
+        Select-AzureRmSubscription -SubscriptionId $storageAccount.subscriptionId
+
+        $storageAccountContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $storageAccount.resourceGroupName -StorageAccountName $storageAccount.storageAccountName
+
+        try
+        {
+            if ($storageAccount.tier -eq 0)
+            {
+                # Removing tier 1 blobs as well
+                for ($i=0;$i -lt $storageAccount.tier1Copies;$i++)
+                {
+                    $blobName = [string]::Format("{0}-tier1-{1}",$job.VhdName,$i.ToString("000"))
+                    Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -Force  
+                }
+            }
+            Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -Force  
+        }
+        catch
+        {
+            # this will not raise an error on purpose
+            $msg = "An error ocurred removing blob $vhdFilter from storage account $($storageAccount.storageAccountName) in resource group $($storageAccount.resourceGroupName), subscription $($storageAccount.subscriptionId).`nError Details:$_"
+            Write-Output $msg
+        }
+    }
 }

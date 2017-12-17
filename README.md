@@ -4,6 +4,10 @@ For detailed information on how to setup and use this solution, please refer to 
 
 ## Release Notes
 
+### Release 12/17/2017
+* Implemented cmdlet Remove-AzureRmImgMgmtJobBlob to remove all blobs related to a specific job
+* Changed New-ImageManagementImage.ps1 runbook so it now tests if the job is completed and invokes Remove-AzureRmImgMgmtJobBlob for clean up
+
 ### Release 12/15/2017
 * Fixed 15 seconds delay each time a table is referenced
 * Implemented job status retrieval capability with  cmdlet Get-AzureRmImgMgmtJobStatus

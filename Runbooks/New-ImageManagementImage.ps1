@@ -110,7 +110,7 @@ try
     $rg = Get-AzureRmResourceGroup -Name $vhdInfo.imagesResourceGroup -ErrorAction SilentlyContinue
     if ($rg -eq $null)
     {
-        $msg = "Resource gruop $($vhdInfo.subscriptionId) is missing, please create it and make sure to assign Contributor role to service principal $($servicePrincipalConnection.ApplicationId)"
+        $msg = "Resource group $($vhdInfo.subscriptionId) is missing, please create it and make sure to assign Contributor role to service principal $($servicePrincipalConnection.ApplicationId)"
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
         
         throw $msg
@@ -143,7 +143,18 @@ try
 
     $msg = "Image sucessfully create: $imageName"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreationConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-    
+
+    $msg = "Cleaning up blobs from storage accounts if job is concluded"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $job = Get-AzureRmImgMgmtJob -configurationTable $configurationTable -JobId $vhdInfo.JobId  
+    $status = Get-AzureRmImgMgmtJobStatus -configurationTable $configurationTable -job $job
+    if ($status.isCompleted())
+    {
+        $msg = "Job ($vhdInfo.JobId) is completed, performing clean up."
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        Remove-AzureRmImgMgmtJobBlob -configurationTable $configurationTable -job $job
+    }
 }
 catch
 {
