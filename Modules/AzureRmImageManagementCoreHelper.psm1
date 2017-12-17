@@ -1291,16 +1291,27 @@ function Remove-AzureRmImgMgmtJobBlob
                 for ($i=0;$i -lt $storageAccount.tier1Copies;$i++)
                 {
                     $blobName = [string]::Format("{0}-tier1-{1}",$job.VhdName,$i.ToString("000"))
-                    Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -Force  
+                    $blob = Get-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -ErrorAction SilentlyContinue
+                    if ($blob -ne $null)
+                    {
+                        Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -Force  
+                    }
                 }
             }
-            Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -Force  
+
+            $blob = Get-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -ErrorAction SilentlyContinue
+            if ($blob -ne $null)
+            {
+                Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -Force 
+            }
         }
         catch
         {
-            # this will not raise an error on purpose
             $msg = "An error ocurred removing blob $vhdFilter from storage account $($storageAccount.storageAccountName) in resource group $($storageAccount.resourceGroupName), subscription $($storageAccount.subscriptionId).`nError Details:$_"
-            Write-Output $msg
+            throw $msg
         }
     }
+
+    # Selecting tier 0 subscription back
+    Select-AzureRmSubscription -Subscriptionid $storageAccountList[0].subscriptionId
 }
