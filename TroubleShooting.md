@@ -146,7 +146,7 @@ Enabling / Disabling storage accounts for granular job processing
 
 * Defining some variables first:
 ```powershell
-$Tier0SubscriptionId = "4a49ea85-ce71-4800-b854-5d18e557921e"
+$Tier0SubscriptionId = "<subscription id>"
 $ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
 $ConfigStorageAccountName = "pmctier0sa01"
 Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
