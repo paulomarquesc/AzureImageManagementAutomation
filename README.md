@@ -4,7 +4,7 @@ For detailed information on how to setup and use this solution, please refer to 
 
 ## Release Notes
 
-### Release 12/17/2017
+### Release 12/18/2017
 * Implemented a way to control which tier 2 storage accounts will receive the VHD, now there is boolean attribute called "enabled" on tier 2 storage account configuration in the configuration table and the Start-ImageManagementTier2Distribution runbook will take into consideration only enabled storage accounts in order to make the tier 2 copies.
 * Implemented solution storage account classes: ImageMgmtStorageAccount (base), ImageMgmtTier0StorageAccount, ImageMgmtTier2StorageAccount
 * Implemented a new cmdlet to get Tier2 Storage Account objects from configuration table, called Get-AzureRmImgMgmtTier2StorageAccount 
