@@ -219,7 +219,8 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
                                                     "tier"=2;
                                                     "container"=Get-ConfigValue $t2Storage.container $config;
                                                     "location"=Get-ConfigValue $t2Storage.location $config;
-                                                    "imagesResourceGroup"=Get-ConfigValue $t2Storage.imagesResourceGroup $config}
+                                                    "imagesResourceGroup"=Get-ConfigValue $t2Storage.imagesResourceGroup $config;
+                                                    "enabled"=Get-ConfigValue $t2Storage.enabled $config}
 
             Add-AzureStorageTableRow -table $configurationTable -partitionKey "storage" -rowKey ([guid]::NewGuid().guid) -property $tier2StorageProperties 
         }

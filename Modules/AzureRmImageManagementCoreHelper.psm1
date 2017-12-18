@@ -13,7 +13,7 @@
 
 #Requires -Modules AzureAD, AzureRmStorageTable, AzureRmStorageQueue
 
-# Enums
+#region Enums
 enum logLevel
 {
     All
@@ -49,6 +49,9 @@ enum storageAccountTier
     tier2
     none
 }
+#endregion
+
+#region Classes
 
 class ImageMgmtLog
 {
@@ -134,7 +137,6 @@ class ImageMgmtJobStatus : ImageMgmtJob
         }
     }
 }
-
 
 class StorageAccountName
 {
@@ -223,8 +225,166 @@ class StorageAccountName
     }
 }
 
-# Module Functions
+class ImageMgmtStorageAccount
+{
+    [string]$StorageAccountName = [string]::Empty
+    [string]$ResourceGroupName = [string]::Empty
+    [string]$SubscriptionId = [string]::Empty
+    [string]$Location = [string]::Empty
+    [string]$Container = [string]::Empty
+    [string]$ImagesResourceGroup = [string]::Empty
+    [int] $Tier = 0
 
+    ImageMgmtStorageAccount() {}
+
+    ImageMgmtStorageAccount([string]$StorageAccountName,[string]$ResourceGroupName, [string]$SubscriptionId, [string]$Location, [string]$Container, [string]$ImagesResourceGroup, [int]$Tier ) {
+        $this.StorageAccountName = $StorageAccountName
+        $this.ResourceGroupName = $ResourceGroupName
+        $this.SubscriptionId = $SubscriptionId
+        $this.Location = $Location
+        $this.Container = $Container
+        $this.ImagesResourceGroup = $ImagesResourceGroup
+        $this.Tier = $tier
+    }
+}
+
+class ImageMgmtTier0StorageAccount : ImageMgmtStorageAccount
+{
+    [int]$Tier1Copies = 0
+  
+    ImageMgmtTier0StorageAccount() {}
+
+    ImageMgmtTier0StorageAccount([string]$StorageAccountName,[string]$ResourceGroupName, [string]$SubscriptionId, [string]$Location, [string]$Container, [string]$ImagesResourceGroup, [int]$Tier, [int]$Tier1Copies  ) {
+        $this.StorageAccountName = $StorageAccountName
+        $this.ResourceGroupName = $ResourceGroupName
+        $this.SubscriptionId = $SubscriptionId
+        $this.Location = $Location
+        $this.Container = $Container
+        $this.ImagesResourceGroup = $ImagesResourceGroup
+        $this.Tier = $tier
+        $this.Tier1Copies = $Tier1Copies
+    }
+}
+
+class ImageMgmtTier2StorageAccount : ImageMgmtStorageAccount
+{
+    [string]$Id = [string]::Empty
+    [bool]$Enabled = 0
+  
+    ImageMgmtTier2StorageAccount() {}
+
+    ImageMgmtTier2StorageAccount([string]$StorageAccountName,[string]$ResourceGroupName, [string]$SubscriptionId, [string]$Location,  [string]$Container, [string]$ImagesResourceGroup, [int]$Tier, [string]$Id, [bool]$Enabled ) {
+        $this.StorageAccountName = $StorageAccountName
+        $this.ResourceGroupName = $ResourceGroupName
+        $this.SubscriptionId = $SubscriptionId
+        $this.Location = $Location
+        $this.Container = $Container
+        $this.ImagesResourceGroup = $ImagesResourceGroup
+        $this.Tier = $tier
+        $this.Id = $Id
+        $this.Enabled = [bool]$Enabled
+    }
+
+    Enable($configurationTable) {
+        if (-not ([string]::IsNullOrEmpty($this.StorageAccountName)))
+        {
+            $filter = "(storageAccountName eq '$($this.StorageAccountName)')" 
+
+            $result = Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $configurationTable 
+        
+            if ($result -ne $null)
+            {
+                $result.Enabled = $true
+                Update-AzureStorageTableRow -table $configurationTable -entity $result
+            }
+            else
+            {
+                throw "Storage account named $($this.StorageAccountName) could not be found on Configuration table"    
+            }
+        }
+        else
+        {
+            throw "Storage account name is empty, please provide a storage account name before enabling it."    
+        }
+    }
+    
+    Enable($ConfigStorageAccountResourceGroupName,$ConfigStorageAccountName,$ConfigurationTableName="imageManagementConfiguration") {
+        if (-not ([string]::IsNullOrEmpty($this.StorageAccountName)))
+        {
+            $configurationTable = Get-AzureRmImgMgmtTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+
+            $filter = "(storageAccountName eq '$($this.StorageAccountName)')" 
+
+            $result = Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $configurationTable 
+        
+            if ($result -ne $null)
+            {
+                $result.Enabled = $true
+                Update-AzureStorageTableRow -table $configurationTable -entity $result
+            }
+            else
+            {
+                throw "Storage account named $($this.StorageAccountName) could not be found on Configuration table"    
+            }
+        }
+        else
+        {
+            throw "Storage account name is empty, please provide a storage account name before enabling it."    
+        }
+    }
+    
+    Disable($configurationTable) {
+        if (-not ([string]::IsNullOrEmpty($this.StorageAccountName)))
+        {
+            $filter = "(storageAccountName eq '$($this.StorageAccountName)')" 
+
+            $result = Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $configurationTable 
+        
+            if ($result -ne $null)
+            {
+                $result.Enabled = $false
+                Update-AzureStorageTableRow -table $configurationTable -entity $result
+            }
+            else
+            {
+                throw "Storage account named $($this.StorageAccountName) could not be found on Configuration table"    
+            }
+        }
+        else
+        {
+            throw "Storage account name is empty, please provide a storage account name before enabling it."    
+        }
+    }
+    
+    Disable($ConfigStorageAccountResourceGroupName,$ConfigStorageAccountName,$ConfigurationTableName="imageManagementConfiguration") {
+        if (-not ([string]::IsNullOrEmpty($this.StorageAccountName)))
+        {
+            $configurationTable = Get-AzureRmImgMgmtTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+
+            $filter = "(storageAccountName eq '$($this.StorageAccountName)')" 
+
+            $result = Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $configurationTable 
+        
+            if ($result -ne $null)
+            {
+                $result.Enabled = $false
+                Update-AzureStorageTableRow -table $configurationTable -entity $result
+            }
+            else
+            {
+                throw "Storage account named $($this.StorageAccountName) could not be found on Configuration table"    
+            }
+        }
+        else
+        {
+            throw "Storage account name is empty, please provide a storage account name before enabling it."    
+        }
+    }
+
+}
+#endregion
+
+#region Module Functions
 function Wait-ModuleImport
 {
     param
@@ -765,7 +925,7 @@ function Get-AzureRmImgMgmtLog
         [string]$ConfigurationTableName= "imageManagementConfiguration",
 
         [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
-        $configurationTable,
+        $ConfigurationTable,
         
         [Parameter(Mandatory=$true)]
         [string]$jobId,
@@ -777,8 +937,6 @@ function Get-AzureRmImgMgmtLog
         [Parameter(Mandatory=$false)]
         [AllowNull()]    
         [steps]$step
-
-        # [switch]$useDefaultColumns
     )
 
     if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
@@ -846,7 +1004,7 @@ function Get-AzureRmImgMgmtJob
          Get-AzureRmImgMgmtJob -ConfigStorageAccountResourceGroupName imageprocess-rg -ConfigStorageAccountName pmcstorage77tier0 
    	.EXAMPLE
         # Example
-         Get-AzureRmImgMgmtJob -configurationTable $configTable
+         Get-AzureRmImgMgmtJob -ConfigurationTable $configTable
     #>
     
     param(
@@ -861,13 +1019,11 @@ function Get-AzureRmImgMgmtJob
         [string]$ConfigurationTableName= "imageManagementConfiguration",
 
         [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
-        $configurationTable,
+        $ConfigurationTable,
 
         [Parameter(Mandatory=$false)]
         [AllowNull()]
-        [string]$JobId,
-
-        [switch]$useDefaultColumns
+        [string]$JobId
     )
 
     if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
@@ -1137,7 +1293,7 @@ function Get-AzureRmImgMgmtJobStatus
         [string]$ConfigurationTableName= "imageManagementConfiguration",
 
         [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
-        $configurationTable,
+        $ConfigurationTable,
 
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         $job
@@ -1179,26 +1335,25 @@ function Get-AzureRmImgMgmtJobStatus
     # Gathering information from log table
     $activityCount++
     Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering upload information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
-    $uploadInfo = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step uploadConcluded #-useDefaultColumns
+    $uploadInfo = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId -Level Informational -step uploadConcluded
 
     $activityCount++
     Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering tier1 copy completion information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
-    $tier1Info = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step tier1DistributionCopyConcluded #-useDefaultColumns
+    $tier1Info = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId -Level Informational -step tier1DistributionCopyConcluded
 
     $activityCount++
     Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering tier2 copy completion information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
-    $tier2Info = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step tier2DistributionCopyConcluded #-useDefaultColumns
+    $tier2Info = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId -Level Informational -step tier2DistributionCopyConcluded
 
     $activityCount++
     Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering image creation completion information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
-    $imageInfo = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId -Level Informational -step imageCreationConcluded #-useDefaultColumns
+    $imageInfo = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId -Level Informational -step imageCreationConcluded
 
     # Getting error messages count
     $activityCount++
     Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering error information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
-    $errorMessages = Get-AzureRmImgMgmtLog -configurationTable $configurationTable -jobId $job.jobId  -Level Error #-useDefaultColumns
+    $errorMessages = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId  -Level Error
 
-    # ImageMgmtJobStatus([string]$jobId, [dateTime]$submissionDate, [string]$description, [string]$vhdName, [string]$imageName, [string]$osType, [int]$uploadCompletion, [int]$tier1CopyCompletion,  [int]$tier2CopyCompletion, [int]$imageCreationCompletion, [int]$errorCount) {
     [int]$uploadCompletion =  ($uploadInfo.count/1) * 100
     [int]$tier1CopyCompletion = ($tier1Info.count/$tier1Copies) * 100
     [int]$tier2CopyCompletion = ($tier2Info.count/$tier2StorageAccountCt) * 100
@@ -1238,9 +1393,9 @@ function Remove-AzureRmImgMgmtJobBlob
         Job object obained using Get-AzureRmImgMgmtJob cmdlet.
   	.EXAMPLE
         $configTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $ConfigStorageAccountName -TableName imagemanagementconfiguration
-        Get-AzureRmImgMgmtJob -configurationTable $configTable 
-        $job = Get-AzureRmImgMgmtJob -configurationTable $configTable -JobId "7a9823e9-4b64-4a70-bab6-b13ddef7092b"  
-        Remove-AzureRmImgMgmtJobBlob -configurationTable $configTable -job $job
+        Get-AzureRmImgMgmtJob -ConfigurationTable $configTable 
+        $job = Get-AzureRmImgMgmtJob -ConfigurationTable $configTable -JobId "7a9823e9-4b64-4a70-bab6-b13ddef7092b"  
+        Remove-AzureRmImgMgmtJobBlob -ConfigurationTable $configTable -job $job
     #>
     
     param(
@@ -1255,7 +1410,7 @@ function Remove-AzureRmImgMgmtJobBlob
         [string]$ConfigurationTableName= "imageManagementConfiguration",
 
         [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
-        $configurationTable,
+        $ConfigurationTable,
 
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         $job
@@ -1315,3 +1470,68 @@ function Remove-AzureRmImgMgmtJobBlob
     # Selecting tier 0 subscription back
     Select-AzureRmSubscription -Subscriptionid $storageAccountList[0].subscriptionId
 }
+
+function Get-AzureRmImgMgmtTier2StorageAccount
+{
+	<#
+	.SYNOPSIS
+		Gets tier 2 storage accounts.
+	.DESCRIPTION
+		Gets tier 2 storage accounts.
+    .PARAMETER ConfigStorageAccountResourceGroupName
+        Resource Group name where the Azure Storage Account that contains the system configuration tables.
+    .PARAMETER ConfigStorageAccountName
+        Name of the Storage Account that contains the system configuration tables
+    .PARAMETER ConfigurationTableName
+        Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
+    .PARAMETER ConfigurationTable
+        Configuration table object.
+  	.EXAMPLE
+        $Tier0SubscriptionId = "<subscription id>"
+        $ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
+        $ConfigStorageAccountName = "pmctier0sa01"
+        Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
+        $ConfigurationTableName="ImageManagementConfiguration"
+
+        $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+
+        Get-AzureRmImgMgmtTier2StorageAccount -ConfigurationTable $configurationTable
+    #>
+    
+    param(
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountResourceGroupName,
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountName,
+        
+        [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+        [AllowNull()]
+        [string]$ConfigurationTableName= "imageManagementConfiguration",
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+        $configurationTable
+    )
+
+    if ($PSCmdlet.ParameterSetName -eq "withConfigSettings")
+    {
+        $configurationTable = Get-AzureRmImgMgmtTable -resourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+    }
+     
+    $filter = "(tier eq 2)" 
+    $rawResult += Get-AzureStorageTableRowByCustomFilter -customFilter $filter -table $configurationTable 
+
+    $resultList = @()
+
+    if ($rawResult -ne $null)
+    {
+        foreach ($result in $rawResult)
+        {
+            $resultList += [ImageMgmtTier2StorageAccount]::New($result.storageAccountName,$result.resourceGroupName,$result.subscriptionId,$result.location,$result.container,$result.imagesResourceGroup,$result.tier,$result.id,$result.enabled)
+        }
+    }
+
+    return ,$resultList
+}
+
+#endregion  

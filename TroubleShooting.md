@@ -139,3 +139,38 @@ ObjectId                             AppId                                Displa
 
 * * Copy the Application ID that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
 * * In the portal, go to your Automation Account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
+
+
+Enabling / Disabling storage accounts for granular job processing
+-----------------------------------------------------------------
+
+* Defining some variables first:
+```powershell
+$Tier0SubscriptionId = "4a49ea85-ce71-4800-b854-5d18e557921e"
+$ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
+$ConfigStorageAccountName = "pmctier0sa01"
+Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
+$ConfigurationTableName="ImageManagementConfiguration"
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+```
+
+* Getting reference to the configuration table
+```powershell
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+```
+
+* Getting the tier 2 storage account objects
+```powershell
+$saList = Get-AzureRmImgMgmtTier2StorageAccount -configurationTable $configurationTable
+```
+
+* Disabling storage accounts in East US region
+```powershell
+$salist | ? {$_.location -eq "eastus"} | % {$_.disable($configurationTable)}
+```
+
+* Enabling storage accounts in East US region
+```powershell
+$salist | ? {$_.location -eq "eastus"} | % {$_.enable($configurationTable)}
+```
+

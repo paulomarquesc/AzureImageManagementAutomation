@@ -110,7 +110,7 @@ else
 $msg = "Obtaining the tier 2 storage accounts that are the final destination of the VHDs" 
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-$tier2StorageAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
+$tier2StorageAccountList = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2) and (enabled eq true)" -table $configurationTable
 $msg = "Tier2 Storage Account count: $($tier2StorageAccountList.count)" 
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $tempJobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
@@ -186,7 +186,9 @@ while ($vhdToProcess -ne $null)
     $msg = "Getting list of source blobs"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
     
-    $blobList = Get-AzureStorageBlob -Container $tier0StorageAccount.container -Blob "$($vhdInfo.vhdName)-tier1*" -Context $sourceContext
+    $blobList = @()
+    $blobList += Get-AzureStorageBlob -Container $tier0StorageAccount.container -Blob $vhdInfo.vhdName -Context $sourceContext
+    $blobList += Get-AzureStorageBlob -Container $tier0StorageAccount.container -Blob "$($vhdInfo.vhdName)-tier1*" -Context $sourceContext
 
     $msg = "Tier 1 blob list count: $($blobList.count). Randomizing this list."
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

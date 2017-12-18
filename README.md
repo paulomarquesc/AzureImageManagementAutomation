@@ -5,6 +5,12 @@ For detailed information on how to setup and use this solution, please refer to 
 ## Release Notes
 
 ### Release 12/17/2017
+* Implemented a way to control which tier 2 storage accounts will receive the VHD, now there is boolean attribute called "enabled" on tier 2 storage account configuration in the configuration table and the Start-ImageManagementTier2Distribution runbook will take into consideration only enabled storage accounts in order to make the tier 2 copies.
+* Implemented solution storage account classes: ImageMgmtStorageAccount (base), ImageMgmtTier0StorageAccount, ImageMgmtTier2StorageAccount
+* Implemented a new cmdlet to get Tier2 Storage Account objects from configuration table, called Get-AzureRmImgMgmtTier2StorageAccount 
+* Tier 2 Storage Accounts can now be enabled or disabled throught the implemented method called Enable() or Disable(), which can be triggered from the objects returned from the Get-AzureRmImgMgmtTier2StorageAccount cmdlet. For examples, please see [Troubleshooting Guide](TroubleShooting.md)
+
+### Release 12/17/2017
 * Implemented cmdlet Remove-AzureRmImgMgmtJobBlob to remove all blobs related to a specific job
 * Changed New-ImageManagementImage.ps1 runbook so it now tests if the job is completed and invokes Remove-AzureRmImgMgmtJobBlob for clean up
 

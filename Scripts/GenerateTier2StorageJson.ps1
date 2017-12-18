@@ -73,8 +73,8 @@ function createStorageAccountEntry
                 "imagesResourceGroup"= '^$config.general.imagesResourceGroup';
                 "location"=$region;
                 "container"='^$config.storage.tier0StorageAccount.container';
-                "subscriptionId"="$subscriptionId"}
-
+                "subscriptionId"="$subscriptionId";
+                "enabled"=$true}
 }
 
 $ErrorActionPreference = "Stop"
