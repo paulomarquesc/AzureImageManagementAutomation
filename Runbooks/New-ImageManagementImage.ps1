@@ -141,20 +141,35 @@ try
 
     New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imagesResourceGroup -Image $imageConfig
 
+    Write-Output "Selecting tier 0 subscription $tier0SubscriptionId back"
+    Select-AzureRmSubscription -SubscriptionId $tier0SubscriptionId
+
     $msg = "Image sucessfully create: $imageName"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreationConcluded) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     $msg = "Cleaning up blobs from storage accounts if job is concluded"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-    $job = Get-AzureRmImgMgmtJob -configurationTable $configurationTable -JobId $vhdInfo.JobId  
-    $status = Get-AzureRmImgMgmtJobStatus -configurationTable $configurationTable -job $job
+    $msg = "Getting job details for job $($vhdInfo.JobId)"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $job = Get-AzureRmImgMgmtJob -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -JobId $vhdInfo.JobId
+
+    $msg = "Getting status object for job $($vhdInfo.JobId)"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $job
+
     if ($status.isCompleted())
     {
         $msg = "Job ($vhdInfo.JobId) is completed, performing clean up."
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-        Remove-AzureRmImgMgmtJobBlob -configurationTable $configurationTable -job $job
+        Remove-AzureRmImgMgmtJobBlob -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $job
     }
+
+    $msg = "Completed execution of runbook $moduleName"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
 }
 catch
 {

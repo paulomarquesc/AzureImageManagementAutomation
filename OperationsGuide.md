@@ -91,15 +91,16 @@ Output
 ```
 UploadCompletion        : 100
 Tier1CopyCompletion     : 100
-Tier2CopyCompletion     : 100
-ImageCreationCompletion : 100
-ErrorCount              : 5
-ErrorLog                : {New-ImageManagementImage.ps1, New-ImageManagementImage.ps1, New-ImageManagementImage.ps1, New-ImageManagementImage.ps1...}
-JobId                   : 141a5c57-5b1e-44e4-a944-38f9d057db02
-SubmissionDate          : 12/19/2017 1:53:03 AM
+Tier2CopyCompletion     : 40
+ImageCreationCompletion : 0
+ErrorCount              : 0
+ErrorLog                : {}
+JobId                   : 6dba0ed7-feb2-4774-84b6-aea229777cd6
+SubmissionDate          : 12/19/2017 4:25:23 PM
 Description             :
 VhdName                 : Windows1709.vhd
 ImageName               : myWindows1709Image-v2
+OsType                  : Windows09Image-v2
 OsType                  : Windows
 ```
 

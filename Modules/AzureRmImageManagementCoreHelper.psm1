@@ -111,6 +111,7 @@ class ImageMgmtJobStatus : ImageMgmtJob
     ImageMgmtJobStatus([string]$jobId, [dateTime]$submissionDate, [string]$description, [string]$vhdName, [string]$imageName, [string]$osType, [int]$uploadCompletion, [int]$tier1CopyCompletion,  [int]$tier2CopyCompletion, [int]$imageCreationCompletion, [int]$errorCount) {
         $this.jobId = $jobId
         $this.submissionDate = $submissionDate
+        $this.description = $description
         $this.vhdName = $vhdName
         $this.imageName = $imageName
         $this.osType = $osType
@@ -1438,33 +1439,26 @@ function Remove-AzureRmImgMgmtJobBlob
 
         $storageAccountContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $storageAccount.resourceGroupName -StorageAccountName $storageAccount.storageAccountName
 
-        try
+        if ($storageAccount.tier -eq 0)
         {
-            if ($storageAccount.tier -eq 0)
+            # Removing tier 1 blobs as well
+            for ($i=0;$i -lt $storageAccount.tier1Copies;$i++)
             {
-                # Removing tier 1 blobs as well
-                for ($i=0;$i -lt $storageAccount.tier1Copies;$i++)
+                $blobName = [string]::Format("{0}-tier1-{1}",$job.VhdName,$i.ToString("000"))
+                $blob = Get-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -ErrorAction SilentlyContinue
+                if ($blob -ne $null)
                 {
-                    $blobName = [string]::Format("{0}-tier1-{1}",$job.VhdName,$i.ToString("000"))
-                    $blob = Get-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -ErrorAction SilentlyContinue
-                    if ($blob -ne $null)
-                    {
-                        Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -Force  
-                    }
+                    Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $blobName -Force -ErrorAction SilentlyContinue
                 }
             }
+        }
 
-            $blob = Get-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -ErrorAction SilentlyContinue
-            if ($blob -ne $null)
-            {
-                Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -Force 
-            }
-        }
-        catch
+        $blob = Get-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -ErrorAction SilentlyContinue
+        if ($blob -ne $null)
         {
-            $msg = "An error ocurred removing blob $vhdFilter from storage account $($storageAccount.storageAccountName) in resource group $($storageAccount.resourceGroupName), subscription $($storageAccount.subscriptionId).`nError Details:$_"
-            throw $msg
+            Remove-AzureStorageBlob -Context $storageAccountContext -Container $storageAccount.container -Blob $job.VhdName -Force -ErrorAction SilentlyContinue
         }
+
     }
 
     # Selecting tier 0 subscription back

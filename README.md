@@ -1,6 +1,7 @@
 # AzureImageManagementAutomation
 
 For detailed information on how to setup and use this solution, please refer to https://blogs.technet.microsoft.com/paulomarques/2017/08/13/new-azure-automation-solution-azure-image-management-automation/.
+Operations and Troubleshooting guide can be found at [Operations Guide](OperationsGuide.md)
 
 ## Release Notes
 
@@ -11,6 +12,9 @@ For detailed information on how to setup and use this solution, please refer to 
 * Tier 2 Storage Accounts can now be enabled or disabled throught the implemented method called Enable() or Disable(), which can be triggered from the objects returned from the Get-AzureRmImgMgmtTier2StorageAccount cmdlet. For examples, please see [Operations Guide - Troubleshooting Section](OperationsGuide.md)
 * Making tier 1 copies distributed amongst different sources
 * Fixed a bug on Get-AzureRmImgMgmtLog where the returned job id was the row key of each log entry instead of the partition key of the log entry
+* ImageMgmtJobStatus class was not updating the Description propoerty
+* New-ImageManagement.ps1 runbook was not selecting tier 0 subscription, causing errors to be logged 
+* Remove-AzureRmImgMgmtJobBlob does not cause stopping error since multiple jobs may try to remove blobs at the same time 
 
 ### Release 12/17/2017
 * Implemented cmdlet Remove-AzureRmImgMgmtJobBlob to remove all blobs related to a specific job
