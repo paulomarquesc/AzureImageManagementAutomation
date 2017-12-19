@@ -1,7 +1,64 @@
 # Operations
 
+This section describes some operations we can do with this solution, starting with submitting a job to distribute your VHDs and create the managed images in Azure to looking at the solution logs and so on.
+
 ## Submitting an image creation job
 
+There are two ways to distribute your custom golden images with this solution, one is from an on-premises located VHD and the other one is from a managed disk that resides in Azure.
+
+### On-premises option 
+```powershell
+# Authenticating
+Add-AzureRmAccount
+
+# Defining some variables and selecting tier 0 subscription
+$Tier0SubscriptionId = "<your tier 0 subscription>"
+$ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
+$ConfigStorageAccountName = "pmctier0sa01"
+$ConfigurationTableName="ImageManagementConfiguration"
+$imgName = "Windows1709CustomImage-v1.0"
+Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
+
+# Changing folder to where you have the Scripts part of this solution
+cd \AzureImageManagementAutomation\Scripts
+
+# Executing UploadVHD.ps1 script
+.\UploadVHD.ps1 -Description "test submission 01" `
+	-Tier0SubscriptionId $Tier0SubscriptionId `
+	-ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
+	-ConfigStorageAccountName $ConfigStorageAccountName `
+	-ImageName $imgName `
+	-VhdFullPath "C:\Windows1709.vhd" `
+	-OsType "Windows"
+``` 
+
+### Managed disk option 
+```powershell
+# Authenticating
+Add-AzureRmAccount
+
+# Defining some variables and selecting tier 0 subscription
+$Tier0SubscriptionId = "<your tier 0 subscription>"
+$ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
+$ConfigStorageAccountName = "pmctier0sa01"
+$ConfigurationTableName="ImageManagementConfiguration"
+$imgName = "Centos7.3-CustomImage-v1.0"
+Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
+
+# Changing folder to where you have the Scripts part of this solution
+cd \AzureImageManagementAutomation\Scripts
+
+# Executing UploadVHD.ps1 script
+.\UploadVHD.ps1 -description "test submission 02" `
+	-Tier0SubscriptionId $Tier0SubscriptionId `
+	-ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
+	-ConfigStorageAccountName $ConfigStorageAccountName `
+	-ImageName $imgName `
+	-sourceAzureRmDiskName "centos01_OsDisk_1_28e8cc4091d142ebb3a820a0c703e811" `
+	-sourceAzureRmDiskResourceGroup "MyCentosVM-RG" `
+	-vhdName "centos-golden-image.vhd" `
+	-OsType "Linux"
+``` 
 
 ## Getting reference to the configuration table
 Configuration table helps you reference it on most of the exposed cmdlets, makes execution faster since you already go a reference. 
@@ -27,7 +84,11 @@ $job = ($jobs | sort -Property submissiondate -Descending)[0]
 ```powershell
 $status = Get-AzureRmImgMgmtJobStatus -ConfigurationTable $configurationTable -job $job
 $status
+```
 
+Output
+
+```
 UploadCompletion        : 100
 Tier1CopyCompletion     : 100
 Tier2CopyCompletion     : 100
@@ -40,16 +101,94 @@ Description             :
 VhdName                 : Windows1709.vhd
 ImageName               : myWindows1709Image-v2
 OsType                  : Windows
+```
 
+Checking if it is completed
+```powershell
 $status.IsCompleted()
+```
 
+Output
+```
 False
+```
 
+If there is any error, check the error logs related to this job returned in the ImageMgmtJobStatus objetc
+```powershell
 $status.ErrorLog
+```
+
+Output 
 
 ```
 
+```
 
+## Getting specific job logs - specific step
+```powershell
+# Listing steps enumeration
+using module AzureRmImageManagement
+[steps].GetEnumNames()
+```
+
+Output
+```
+upload
+uploadConcluded
+tier1Distribution
+tier2Distribution
+imageCreation
+copyProcessMessage
+tier1DistributionCopyConcluded
+tier2DistributionCopyConcluded
+imageCreationConcluded
+```
+
+Getting specific step log
+$logs = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId -Level All -step tier1DistributionCopyConcluded
+
+```
+
+```powershell
+$logs | ft
+```
+Output
+
+```
+jobId                                timeStamp             step                           moduleName                                 logLevel      message
+-----                                ---------             ----                           ----------                                 --------      -------
+001f2a67-a556-40fb-96fe-affbe97b8056 12/19/2017 4:11:16 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-309
+00335dcd-d71a-41a0-b123-a2228e65373f 12/19/2017 4:13:40 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-594
+009b906f-99ed-4f16-acd8-c70fc2325574 12/19/2017 4:09:36 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-109
+00d70f2c-ee99-4f89-b8c9-66888ccc278d 12/19/2017 4:13:19 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-553
+011786fc-626d-4cf3-840b-a84614e939f9 12/19/2017 4:13:51 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-616
+...
+```
+
+Getting logs for an entire module
+
+```powershell
+$logs | sort -Property timestamp | ? { $_.modulename -eq "Start-ImageManagementTier1Distribution.ps1"} | ft
+```
+
+Output
+```
+jobId                                timeStamp             step                           moduleName                                 logLevel      message
+-----                                ---------             ----                           ----------                                 --------      -------
+22b5b190-923b-4686-ad64-22d09063fca1 12/19/2017 4:01:58 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational Obtaining the tier 0 storage account (the one that receives the vhd from on-premises)
+4c927adb-3fc0-4316-ab03-14242de53e4e 12/19/2017 4:01:58 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational Tier 0 Storage account name: pmctier0sa01
+e8395e16-a9c4-48b6-8585-9fcaac14f6ab 12/19/2017 4:01:59 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational Getting tier 0 storage account pmctier0sa01 context from resource group PMC-OS-Images-Solution-rg
+2721ea4d-0d05-43f7-b4eb-ed533f99ff13 12/19/2017 4:01:59 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational Context successfuly obtained.
+3f92c3b4-41bf-46d3-ac73-5895a79e618d 12/19/2017 4:02:00 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational Starting the copy process to tier 1 blobs
+5ee56962-3366-4d5d-a86e-4ef2d6d167d3 12/19/2017 4:08:41 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational Checking tier 1 copy completion status
+5d0e07b5-5df7-4bee-8f13-174e5e0eac62 12/19/2017 4:08:41 PM tier1Distribution              Start-ImageManagementTier1Distribution.ps1 Informational current status check pass 1, pending copies: 999
+583b9d42-454f-4ee3-ade9-4be388dfc736 12/19/2017 4:08:42 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-000
+b3ce812f-0045-48f0-8728-5a27319fc9bf 12/19/2017 4:08:42 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-001
+8d354042-9079-43f6-a58a-d6ff624fa5fa 12/19/2017 4:08:43 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-002
+29124de8-a8af-4ac9-a818-e65a72047cda 12/19/2017 4:08:43 PM tier1DistributionCopyConcluded Start-ImageManagementTier1Distribution.ps1 Informational Completed destination blobCopy: Windows1709.vhd-tier1-003
+...
+
+```
 
 # Troubleshooting
 
