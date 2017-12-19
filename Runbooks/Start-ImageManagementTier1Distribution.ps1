@@ -140,32 +140,38 @@ Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1
 
 $pendingCopies = New-Object System.Collections.Generic.List[System.String]
 
+$sourceVhdName = $vhdName
+
 for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
 {
-    $msg = "Starting tier 1 blob copy job on tier  0 storage account $($tier0StorageAccount.storageAccountName) - copy # $($i)" 
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-    
     $destBlobName = [string]::Format("{0}-tier1-{1}",$VhdName,$i.ToString("000"))
 
-    $msg = "Tier 1 blob name: $destBlobName "
-    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-    
+    # getting the previous blob as source or a random number after 10 blobs
+    if (($i -gt 0) -and ($i -le 10))
+    {
+        $sourceVhdName = [string]::Format("{0}-tier1-{1}",$VhdName,($i-1).ToString("000"))
+    }
+    elseif ($i -gt 10)
+    {
+        $rnd = Get-Random -Minimum 0 -Maximum $i
+        $sourceVhdName = [string]::Format("{0}-tier1-{1}",$VhdName,($rnd).ToString("000"))
+    }
+
     try
     {
         Start-AzureRmImgMgmtVhdCopy -sourceContainer $tier0StorageAccount.container `
-                                    -sourceContext $sourceContext `
-                                    -destContainer $tier0StorageAccount.container `
-                                    -destContext $sourceContext `
-                                    -sourceBlobName $VhdName `
-                                    -destBlobName  $destBlobName `
-                                    -RetryWaitTime 30
+                -sourceContext $sourceContext `
+                -destContainer $tier0StorageAccount.container `
+                -destContext $sourceContext `
+                -sourceBlobName $sourceVhdName `
+                -destBlobName  $destBlobName `
+                -RetryWaitTime 10
  
         $pendingCopies.Add($destBlobName)
-    
     }
     catch
     {
-        $msg = "An error ocurred starting tier 1 copy from source blob $VhdName to destination blob $destBlobName on storage account $($sa.context.StorageAccountName)."
+        $msg = "An error ocurred starting tier 1 copy from source blob $sourceVhdName to destination blob $destBlobName on storage account $($sa.context.StorageAccountName)."
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
     
         $msg = "Error Details: $_"

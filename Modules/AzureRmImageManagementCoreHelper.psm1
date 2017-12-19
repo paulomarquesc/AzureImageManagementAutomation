@@ -976,7 +976,7 @@ function Get-AzureRmImgMgmtLog
     $resultList = @()
     foreach ($result in $rawResult)
     {
-        $resultList += [ImageMgmtLog]::New($result.RowKey,$result.tableTimestamp.DateTime,$result.step,$result.moduleName,$result.logLevel, $result.message)
+        $resultList += [ImageMgmtLog]::New($result.PartitionKey,$result.tableTimestamp.DateTime,$result.step,$result.moduleName,$result.logLevel, $result.message)
     }
 
     return ,$resultList
@@ -1156,7 +1156,7 @@ function Get-AzureRmImgMgmtStorageContext
     (
         [string]$ResourceGroupName,
         [string]$StorageAccountName,
-        [int]$retry = 10,
+        [int]$retry = 30,
         [int]$retryWaitSeconds = 30
     )
 

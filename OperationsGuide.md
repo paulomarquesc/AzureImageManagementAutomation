@@ -1,3 +1,56 @@
+# Operations
+
+## Submitting an image creation job
+
+
+## Getting reference to the configuration table
+Configuration table helps you reference it on most of the exposed cmdlets, makes execution faster since you already go a reference. 
+
+```powershell
+$ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
+$ConfigStorageAccountName = "pmctier0sa01"
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+```
+
+## Getting a list of submitted jobs
+```powershell
+$jobs = Get-AzureRmImgMgmtJob -ConfigurationTable $configurationTable
+```
+
+## Getting the last submitted job
+```powershell
+$jobs = Get-AzureRmImgMgmtJob -ConfigurationTable $configurationTable
+$job = ($jobs | sort -Property submissiondate -Descending)[0]
+```
+
+## Getting job status
+```powershell
+$status = Get-AzureRmImgMgmtJobStatus -ConfigurationTable $configurationTable -job $job
+$status
+
+UploadCompletion        : 100
+Tier1CopyCompletion     : 100
+Tier2CopyCompletion     : 100
+ImageCreationCompletion : 100
+ErrorCount              : 5
+ErrorLog                : {New-ImageManagementImage.ps1, New-ImageManagementImage.ps1, New-ImageManagementImage.ps1, New-ImageManagementImage.ps1...}
+JobId                   : 141a5c57-5b1e-44e4-a944-38f9d057db02
+SubmissionDate          : 12/19/2017 1:53:03 AM
+Description             :
+VhdName                 : Windows1709.vhd
+ImageName               : myWindows1709Image-v2
+OsType                  : Windows
+
+$status.IsCompleted()
+
+False
+
+$status.ErrorLog
+
+```
+
+
+
 # Troubleshooting
 
 This guide is a work in progress and will be updated frequently to include new ways to troubleshoot this solution.
@@ -111,34 +164,34 @@ Workaround today is:
 * If the content looks like: System.Object[] please follow these steps to obtain the Application ID:
 * On your Setup Info json file, get the value of automationAccount. applicationDisplayNamePrefix (e.g. pmcPMCOSImg-SP)
 * Using Portal
-* * Take note of the Automation Account Name (e.g. pmcPMCOSImg-AA-Copy001) 
-* * Go to Azure AD
-* * Click on App Registrations
-* * In the “Search by name or AppId”, paste the value obtained on the first step
-* * Click in the Application that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
-* * Copy the value of Application ID
-* * Go back to your automation account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
+	* Take note of the Automation Account Name (e.g. pmcPMCOSImg-AA-Copy001) 
+	* Go to Azure AD
+	* Click on App Registrations
+	* In the “Search by name or AppId”, paste the value obtained on the first step
+	* Click in the Application that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
+	* Copy the value of Application ID
+	* Go back to your automation account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
 * Partially Using PowerShell
-* * Take note of the Automation Account Name (e.g. pmcPMCOSImg-AA-Copy001) 
-* * Open Powershell and execute the following cmdlets
+	* Take note of the Automation Account Name (e.g. pmcPMCOSImg-AA-Copy001) 
+	* Open Powershell and execute the following cmdlets
 
-```powershell
-Connect-AzureAD
-$appDisplayName = “<value obtained on first step>”
-Get-AzureAdServicePrincipal -SearchString $appDisplayName
-```
+	```powershell
+	Connect-AzureAD
+	$appDisplayName = “<value obtained on first step>”
+	Get-AzureAdServicePrincipal -SearchString $appDisplayName
+	```
 
-* * This will output your service principals created by the setup scripts:
+	* This will output your service principals created by the setup scripts:
 
-```
-ObjectId                             AppId                                DisplayName
---------                             -----                                -----------
-8573b393-d34d-4c50-8693-a4a310ca287b c812c395-57f7-425a-9623-de54cf1087f3 pmcPMCOSImg-SP
-4fe21ffc-6235-4f2c-835a-fb5261753953 57f526fe-f655-43f1-9dd1-0e54b5326401 pmcPMCOSImg-SP-Copy001
-```
+	```
+	ObjectId                             AppId                                DisplayName
+	--------                             -----                                -----------
+	8573b393-d34d-4c50-8693-a4a310ca287b c812c395-57f7-425a-9623-de54cf1087f3 pmcPMCOSImg-SP
+	4fe21ffc-6235-4f2c-835a-fb5261753953 57f526fe-f655-43f1-9dd1-0e54b5326401 pmcPMCOSImg-SP-Copy001
+	```
 
-* * Copy the Application ID that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
-* * In the portal, go to your Automation Account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
+	* Copy the Application ID that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
+	* In the portal, go to your Automation Account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
 
 
 Enabling / Disabling storage accounts for granular job processing
