@@ -1,6 +1,6 @@
-# Operations
+# Operations/Troubleshooting Guide
 
-This section describes some operations we can do with this solution, starting with submitting a job to distribute your VHDs and create the managed images in Azure to looking at the solution logs and so on.
+This document describes some operations we can do with this solution, starting with submitting a job to distribute your VHDs and create the managed images in Azure to looking at the solution logs and so on. Finally we have a section dedicated to troubleshooting.
 
 ## Submitting an image creation job
 
@@ -145,6 +145,7 @@ imageCreationConcluded
 ```
 
 Getting specific step log
+```powershell
 $logs = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId -Level All -step tier1DistributionCopyConcluded
 
 ```
@@ -153,7 +154,6 @@ $logs = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $jo
 $logs | ft
 ```
 Output
-
 ```
 jobId                                timeStamp             step                           moduleName                                 logLevel      message
 -----                                ---------             ----                           ----------                                 --------      -------
@@ -190,12 +190,43 @@ b3ce812f-0045-48f0-8728-5a27319fc9bf 12/19/2017 4:08:42 PM tier1DistributionCopy
 
 ```
 
+## Enabling / Disabling storage accounts for granular job processing
+
+Defining some variables first:
+```powershell
+$Tier0SubscriptionId = "<subscription id>"
+$ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
+$ConfigStorageAccountName = "pmctier0sa01"
+Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
+$ConfigurationTableName="ImageManagementConfiguration"
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+```
+
+Getting reference to the configuration table
+```powershell
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+```
+
+Getting the tier 2 storage account objects
+```powershell
+$saList = Get-AzureRmImgMgmtTier2StorageAccount -configurationTable $configurationTable
+```
+
+Disabling storage accounts in East US region
+```powershell
+$salist | ? {$_.location -eq "eastus"} | % {$_.disable($configurationTable)}
+```
+
+Enabling storage accounts in East US region
+```powershell
+$salist | ? {$_.location -eq "eastus"} | % {$_.enable($configurationTable)}
+```
+
 # Troubleshooting
 
 This guide is a work in progress and will be updated frequently to include new ways to troubleshoot this solution.
 
-How to restart the copy process starting from Tier 2 distribution
------------------------------------------------------------------
+## How to restart the copy process starting from Tier 2 distribution
 
 1) Define some variables in Powershell that will help:
 
@@ -257,8 +288,7 @@ $queueMessage = $log[0].message
 5) Place this content in the queue using azure Storage Explorer or Powershell and wait or restart the Start-ImageManagementTier2Distribution using the same values for the paramters from the failed job.
 
 
-Getting log information from the Tier 2 Distribution Runbook
-------------------------------------------------------------
+## Getting log information from the Tier 2 Distribution Runbook
 
 High level steps to start querying:
 
@@ -292,8 +322,7 @@ $jobId= "<row key of the job you want to query>"
 Get-AzureRmImgMgmtLog -ConfigStorageAccountResourceGroupName $configStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -jobId $jobId -Level All -step tier2Distribution | sort tableTimeStamp | select tableTimeStamp,step,message
 ```
 
-Setup.ps1 script intermitently get the Connection AzureRunAsConnection with a wrong Application Id with value System.Object[]
------------------------------------------------------------------------------------------------------------------------------
+## Setup.ps1 script intermitently get the Connection AzureRunAsConnection with a wrong Application Id with value System.Object[]
 
 Setup.ps1 script may generate issues in the Automation Accounts and the initial Update runbook will fail due to Connections on the Automation Account may be generating random System.Object[] application id instead of the real application ID.
 Workaround today is:
@@ -332,37 +361,4 @@ Workaround today is:
 	* Copy the Application ID that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
 	* In the portal, go to your Automation Account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
 
-
-Enabling / Disabling storage accounts for granular job processing
------------------------------------------------------------------
-
-* Defining some variables first:
-```powershell
-$Tier0SubscriptionId = "<subscription id>"
-$ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
-$ConfigStorageAccountName = "pmctier0sa01"
-Select-AzureRmSubscription -Subscriptionid $Tier0SubscriptionId
-$ConfigurationTableName="ImageManagementConfiguration"
-$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
-```
-
-* Getting reference to the configuration table
-```powershell
-$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
-```
-
-* Getting the tier 2 storage account objects
-```powershell
-$saList = Get-AzureRmImgMgmtTier2StorageAccount -configurationTable $configurationTable
-```
-
-* Disabling storage accounts in East US region
-```powershell
-$salist | ? {$_.location -eq "eastus"} | % {$_.disable($configurationTable)}
-```
-
-* Enabling storage accounts in East US region
-```powershell
-$salist | ? {$_.location -eq "eastus"} | % {$_.enable($configurationTable)}
-```
 
