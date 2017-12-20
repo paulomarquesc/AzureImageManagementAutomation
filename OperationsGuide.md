@@ -66,6 +66,7 @@ Configuration table helps you reference it on most of the exposed cmdlets, makes
 ```powershell
 $ConfigStorageAccountResourceGroupName = "PMC-OS-Images-Solution-rg"
 $ConfigStorageAccountName = "pmctier0sa01"
+$configurationTableName = "imageManagementConfiguration"
 $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 ```
 
@@ -361,5 +362,20 @@ Workaround today is:
 
 	* Copy the Application ID that most matches your Automation Account Name (in my example: pmcPMCOSImg-SP-Copy001, remember that there will be one app registration/service principal per automation account the setup script creates)
 	* In the portal, go to your Automation Account/connection/AzureRunAsConnection and paste the content in the ApplicationID field and save it
+
+## UploadVHD.ps1 - After MD5 hash calculation finishes during the upload process an error occurs
+
+THe following error message appears after the MD5 phase of Add-AzureRmVHD cmdlet used inside of UploadVHD.ps1 script:
+
+```
+Add-AzureRmVhd : The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently.
+At C:\AzureImageManagementAutomation-master\Scripts\UploadVHD.ps1:187 char:9
++         Add-AzureRmVhd `
++         ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : CloseError: (:) [Add-AzureRmVhd], PSInvalidOperationException
+    + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
+```
+
+This may be caused because Azure Storage Explorer is opened and using the Configuration Storage Account (tier0 Storage Account), so please just close Azure Storage Explorer and retry the upload.
 
 

@@ -93,7 +93,7 @@ Param
     [string] $ImageName,
 
     [Parameter(Mandatory=$false,ParameterSetName="localVhd")]
-    [string] $UploaderThreadNumber = 10,
+    [int] $UploaderThreadNumber = 10,
 
     [Parameter(Mandatory=$false)]
     [switch] $Overwrite,
@@ -189,7 +189,7 @@ if ($PSCmdlet.ParameterSetName -eq "localVhd")
             -Destination $uri `
             -LocalFilePath $VhdFullPath `
             -NumberOfUploaderThreads $uploaderThreadNumber `
-            -OverWrite:$overrite
+            -OverWrite:$overwrite
 
         $msg = "Uploading VHD ($VhdFullPath) completed"
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
