@@ -5,6 +5,9 @@ Operations and Troubleshooting guide can be found at [Operations Guide](Operatio
 
 ## Release Notes
 
+### Release 12/21/2017
+* Included a test during setup phase to check if Microsoft.Compute resource provider is registered and perform registration if not
+
 ### Release 12/18/2017
 * Implemented a way to control which tier 2 storage accounts will receive the VHD, now there is boolean attribute called "enabled" on tier 2 storage account configuration in the configuration table and the Start-ImageManagementTier2Distribution runbook will take into consideration only enabled storage accounts in order to make the tier 2 copies.
 * Implemented solution storage account classes: ImageMgmtStorageAccount (base), ImageMgmtTier0StorageAccount, ImageMgmtTier2StorageAccount

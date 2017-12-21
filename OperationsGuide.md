@@ -60,7 +60,9 @@ cd \AzureImageManagementAutomation\Scripts
 	-OsType "Linux"
 ``` 
 
-## Getting reference to the configuration table
+## Obtaining information
+
+### Getting reference to the configuration table
 Configuration table helps you reference it on most of the exposed cmdlets, makes execution faster since you already go a reference. 
 
 ```powershell
@@ -70,18 +72,18 @@ $configurationTableName = "imageManagementConfiguration"
 $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
 ```
 
-## Getting a list of submitted jobs
+### Getting a list of submitted jobs
 ```powershell
 $jobs = Get-AzureRmImgMgmtJob -ConfigurationTable $configurationTable
 ```
 
-## Getting the last submitted job
+### Getting the last submitted job
 ```powershell
 $jobs = Get-AzureRmImgMgmtJob -ConfigurationTable $configurationTable
 $job = ($jobs | sort -Property submissiondate -Descending)[0]
 ```
 
-## Getting job status
+### Getting job status
 ```powershell
 $status = Get-AzureRmImgMgmtJobStatus -ConfigurationTable $configurationTable -job $job
 $status
@@ -126,7 +128,7 @@ Output
 
 ```
 
-## Getting specific job logs - specific step
+### Getting specific job logs - specific step
 ```powershell
 # Listing steps enumeration
 using module AzureRmImageManagement
@@ -224,9 +226,34 @@ Enabling storage accounts in East US region
 $salist | ? {$_.location -eq "eastus"} | % {$_.enable($configurationTable)}
 ```
 
+## Onboarding new subscriptions and/or new regions
+
+<TBD>
+
+## Retrying specific job phases
+
+This solution is comprised of 4 key phases as follows:
+1. Tier 0 Upload - process to copy the VHD from on-premises or Azure VM or from a Managed disk to the tier 0 Storage Account
+2. Tier 1 VHD Copy - process to create multiple copies of the initial uploaded VHD in the tier 0 Storage Account
+3. Tier 2 VHD Copy - process to copy the VHD to the tier 2 Storage Accounts in the same or other subscriptions/regions (sourced from  tier 1 VHDs created in the previous phase) 
+4. Image Creation - final process, it creates the managed images in each subscription/region where the tier 2 storage accounts exists and got a copy of the original VHD 
+
+Currently for steps/phases 1 and 2, there is not much to be done, for the other ones, please follow these instructions:
+
+### Tier 2 VHD Copy 
+* xyz
+
+
+### Image Creation
+* abc
+
+
 # Troubleshooting
 
 This guide is a work in progress and will be updated frequently to include new ways to troubleshoot this solution.
+
+## Basic troubleshooting steps (where to look)
+<TDB>
 
 ## How to restart the copy process starting from Tier 2 distribution
 
@@ -378,4 +405,16 @@ At C:\AzureImageManagementAutomation-master\Scripts\UploadVHD.ps1:187 char:9
 
 This may be caused because Azure Storage Explorer is opened and using the Configuration Storage Account (tier0 Storage Account), so please just close Azure Storage Explorer and retry the upload.
 
+## UploadVHD.ps1 - During the data transfer phase of Add-AzureRmVHD you get a generic error message from a VM running the script in Azure
 
+Uploading a VHD from a VM in Azure may raise the following error message:
+
+Add-AzureRmVhd : One or more errors occurred.
+At C:\AzureImageManagementAutomation-master\Scripts\UploadVHD.ps1:187 char:9
++         Add-AzureRmVhd `
++         ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : CloseError: (:) [Add-AzureRmVhd], AggregateException
+    + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
+
+
+This may be caused due to the number of default upload threads, which is 10, retry the operation using the parameter  -UploaderThreadNumber to a number lower than 10 which is the default value.

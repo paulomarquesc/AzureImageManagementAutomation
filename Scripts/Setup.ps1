@@ -455,6 +455,16 @@ if ($servicePrincipalList -ne $null)
 
         Select-AzureRmSubscription -SubscriptionId $sub.SubscriptionID
 
+        # Register Microsoft.Compute if not already registered
+        $computeResourceProvider = Get-AzureRmResourceProvider -ProviderNamespace Microsoft.Compute | Where-Object {$_.RegistrationState -eq "Registered"} `
+                                                                                                    | Select-Object -ExpandProperty ResourceTypes `
+                                                                                                    | Where-Object {$_.ResourceTypeName -eq "disks"}
+
+        if ($computeResourceProvider -eq $null)
+        {
+            Register-AzureRmResourceProvider -ProviderNamespace "Microsoft.Compute"
+        }
+
         # Adding role assignment for both resource groups
         foreach ($servicePrincipal in $servicePrincipalList)
         {
