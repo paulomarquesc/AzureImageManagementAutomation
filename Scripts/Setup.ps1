@@ -9,15 +9,25 @@
     a VM from that image. This reduces the burden uploading VHDs on environments and having to distribute manually
     between different Subcriptions.
     This script needs to be executed in an elevated PowerShell command line window.
-.PARAMETER configFile
+.PARAMETER ConfigFile
     Configuration file needed for the setup process, basically a json file. Check the solution attached example.
+.PARAMETER AzureCredential
+    This is PSCredential object for the user in Azure AD that has onwer at subscription level or administrator or co-administrator rights in the
+    tier 0 subcription (the one that will hold the tier 0 storage account with configuration table and automation accounts).
+    An example of how to get this credential is: $cred = Get-Credential
+    If this parameter is not provided, you will be prompted to provide the information during the script execution. 
 .EXAMPLE
     # Installing the solution with a custom SetupInfo.json file
     .\Setup.ps1 -configFile c:\temp\myNewSetupInfo.json
 .EXAMPLE
+    # Installing using a custom setup info file with credential object
+    $cred = Get-Credential
+    .\Setup.ps1 -configFile c:\temp\myNewSetupInfo.json -AzureCredential $cred
+.EXAMPLE
     # Installing using the default filename in the same folder as the setup script
     .\Setup.ps1
 .NOTES
+    1) The user executing this setup script must be owner of all involved subscriptions.
 #>
 
 #Requires -Modules AzureAD, AzureRmImageManagement
@@ -25,16 +35,27 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [string]$configFile = (Join-Path $PSScriptRoot "SetupInfo.json")
+    [string]$configFile = (Join-Path $PSScriptRoot "SetupInfo.json"),
+    [Parameter(Mandatory=$false)]
+    [PSCredential]$azureCredential
 )
 
 #region Gathering Information
 $ErrorActionPreference = "Stop"
 
+if ($azureCredential -eq $null)
+{
+    $azureCredential = Get-Credential -Message "Plese, enter the username and password of an Azure AD Account that has been assigned Owner role at subscription level of all subsrciptions involved in this setup."
+}
+
+Add-AzureRmAccount -Credential $azureCredential
+
 if (!(test-path $configFile))
 {
     throw "Configuration file $configFile could not be found."
 }
+
+$scriptPath = [system.io.path]::GetDirectoryName($PSCommandPath)
 
 #-----------------------------------------------
 # Reading configuration file contents
@@ -210,7 +231,7 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
         # Create the storage account
         try
         {
-            New-AzureRmStorageAccount -ResourceGroupName (Get-ConfigValue $t2Storage.resourceGroup $config) -Name $saName -SkuName Standard_LRS -Location (Get-ConfigValue $t2Storage.location $config) -Kind Storage 
+            New-AzureRmStorageAccount -ResourceGroupName (Get-ConfigValue $t2Storage.resourceGroup $config) -Name $saName -SkuName Standard_LRS -Location (Get-ConfigValue $t2Storage.location $config) -Kind BlobStorage -AccessTier Cool
             
             [hashtable]$tier2StorageProperties = @{ "id"=(Get-ConfigValue $t2Storage.id $config).ToString();
                                                     "resourceGroupName"=Get-ConfigValue $t2Storage.resourceGroup $config;
@@ -226,23 +247,61 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
         }
         catch
         {
-            throw "Error creating tier 2 storage account: $($t2Storage.id) in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId). `nError Details: $_"
+            throw "Error creating tier 2 storage account database id $($t2Storage.id), named $saName in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId). `nError Details: $_"
         }
     }
     else
     {
-        Write-Verbose "Tier 2 Storage id $($t2Storage.id) in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId) already exists"    
+        Write-Verbose "Tier 2 Storage database id $($t2Storage.id), named $saName in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId) already exists"    
     }
 }
 #endregion
 
-#region Setting up Main Automation Account and RunAs Accounts
-Write-Verbose "Setting up Main Automation Account and RunAs Account" -Verbose
+#region Setting up Automation and RunAs Accounts
+
+# ScriptBlock that invokes the Automation Account creation
+[ScriptBlock]$sb = {
+    param
+    (
+        [PSCredential]$cred,
+        $automationAccountName,
+        $resourceGroupName,
+        $location,
+        $applicationDisplayName,
+        $subscriptionId,
+        $modulesContainerUrl,
+        $sasToken,
+        $runbooks,
+        $config,
+        $basicTier,
+        $localRunbooksPath
+    )
+
+    Add-AzureRmAccount -Credential $cred
+
+    New-AzureRmImgMgmtAutomationAccount -automationAccountName $automationAccountName `
+        -resourceGroupName $resourceGroupName `
+        -location $location `
+        -applicationDisplayName $applicationDisplayName `
+        -subscriptionId $subscriptionId `
+        -modulesContainerUrl $modulesContainerUrl `
+        -sasToken $sasToken `
+        -runbooks $runbooks `
+        -config $config `
+        -basicTier:$basicTier `
+        -localRunbooksPath $localRunbooksPath
+}
+
+$automationAccountPSJobs = @()
+$automationAccountsCheckList = @()
+
+Write-Verbose "Setting up Automation and RunAs Accounts" -Verbose
 $tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
 
-# Adding main automation account
-$result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals (Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config)
+# Adding Main automation account
+$mainAutomationAccountName = Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config
+$result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals $mainAutomationAccountName
 
 if ($result -eq $null)
 {
@@ -254,33 +313,24 @@ if ($result -eq $null)
         New-AzureRmResourceGroup -Name (Get-ConfigValue $config.automationAccount.resourceGroup $config) -Location (Get-ConfigValue $config.storage.tier0StorageAccount.location $config)
     }
 
-    New-AzureRmImgMgmtAutomationAccount -automationAccountName (Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config) `
-        -resourceGroupName (Get-ConfigValue $config.automationAccount.resourceGroup $config) `
-        -location (Get-ConfigValue $config.automationAccount.location $config) `
-        -applicationDisplayName (Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config) `
-        -subscriptionId (Get-ConfigValue $config.automationAccount.subscriptionId $config) `
-        -modulesContainerUrl ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))) `
-        -sasToken $sasToken `
-        -runbooks $config.automationAccount.runbooks.mainAutomationAccount `
-        -config $config `
-        -basicTier
-
-    # Adding the main automation account info in the configuration table
-    [hashtable]$mainAutomationAccountProps = @{ "automationAccountName"=Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config;
-                                        "resourceGroupName"=Get-ConfigValue $config.automationAccount.resourceGroup $config;
-                                        "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
-                                        "applicationDisplayName"=Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config;
-                                        "type"="main";
-                                        "location"=Get-ConfigValue $config.automationAccount.location $config;
-                                        "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
-
-    Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $mainAutomationAccountProps 
+    Write-Verbose "Submitting PS Job to create main automation account $mainAutomationAccountName" -Verbose
+    $automationAccountPSJobs += Start-Job -ScriptBlock $sb -ArgumentList $azureCredential,  `
+                                                                         $mainAutomationAccountName, `
+                                                                         (Get-ConfigValue $config.automationAccount.resourceGroup $config), `
+                                                                         (Get-ConfigValue $config.automationAccount.location $config), `
+                                                                         (Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config), `
+                                                                         (Get-ConfigValue $config.automationAccount.subscriptionId $config), `
+                                                                         ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))), `
+                                                                         $sasToken, `
+                                                                         $config.automationAccount.runbooks.mainAutomationAccount, `
+                                                                         $config, `
+                                                                         $true, `
+                                                                         $scriptPath
+                                                    
+    $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$mainAutomationAccountName;"type"="main"}
 }
-#endregion
 
-#region Adding Copy Process automation account(s)
-Write-Verbose "Setting up Copy Process Automation Account(s) and RunAs Account(s)" -Verbose
-
+# Copy Process Automation Accounts
 for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAccountsCount $config);$i++)
 {
     $copyAutomationAccountName = [string]::Format("{0}-Copy{1}",(Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config),$i.ToString("000"))
@@ -298,35 +348,25 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
             New-AzureRmResourceGroup -Name (Get-ConfigValue $config.automationAccount.resourceGroup $config) -Location (Get-ConfigValue $config.storage.tier0StorageAccount.location $config)
         }
 
-        New-AzureRmImgMgmtAutomationAccount -automationAccountName $copyAutomationAccountName `
-            -resourceGroupName (Get-ConfigValue $config.automationAccount.resourceGroup $config) `
-            -location (Get-ConfigValue $config.automationAccount.location $config) `
-            -applicationDisplayName $copyApplicationDisplayName `
-            -subscriptionId (Get-ConfigValue $config.automationAccount.subscriptionId $config) `
-            -modulesContainerUrl ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))) `
-            -sasToken $sasToken `
-            -runbooks $config.automationAccount.runbooks.copyProcessAutomationAccount `
-            -config $config `
-            -basicTier
-
-        # Adding the main automation account info in the configuration table
-        [hashtable]$copyAutomationAccountProps = @{ "automationAccountName"=$copyAutomationAccountName;
-                                            "resourceGroupName"=Get-ConfigValue $config.automationAccount.resourceGroup $config;
-                                            "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
-                                            "applicationDisplayName"=$copyApplicationDisplayName;
-                                            "type"="copyDedicated";
-                                            "maxJobsCount"=Get-ConfigValue $config.automationAccount.maxDedicatedCopyJobs $config;
-                                            "location"=Get-ConfigValue $config.automationAccount.location $config;
-                                            "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
-
-        Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $copyAutomationAccountProps 
+        Write-Verbose "Submitting PS Job to create copy process automation account $copyAutomationAccountName" -Verbose
+        $automationAccountPSJobs += Start-Job -ScriptBlock $sb -ArgumentList $azureCredential,  `
+                                                                            $copyAutomationAccountName, `
+                                                                            (Get-ConfigValue $config.automationAccount.resourceGroup $config), `
+                                                                            (Get-ConfigValue $config.automationAccount.location $config), `
+                                                                            $copyApplicationDisplayName, `
+                                                                            (Get-ConfigValue $config.automationAccount.subscriptionId $config), `
+                                                                            ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))), `
+                                                                            $sasToken, `
+                                                                            $config.automationAccount.runbooks.copyProcessAutomationAccount, `
+                                                                            $config, `
+                                                                            $true, `
+                                                                            $scriptPath
+        
+        $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$copyAutomationAccountName;"type"="copyDedicated"}
     }
 }
-#endregion
 
-#region Adding Image Creation Process automation account(s)
-Write-Verbose "Setting up Image Creation Process Automation Account(s) and RunAs Account(s)" -Verbose
-
+# Image Creation Process Automation Accounts
 for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAccountsCount $config);$i++)
 {
     $imgAutomationAccountName = [string]::Format("{0}-Img{1}",(Get-ConfigValue $config.automationAccount.automationAccountNamePrefix $config),$i.ToString("000"))
@@ -344,28 +384,94 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
             New-AzureRmResourceGroup -Name (Get-ConfigValue $config.automationAccount.resourceGroup $config) -Location (Get-ConfigValue $config.storage.tier0StorageAccount.location $config)
         }
 
-        New-AzureRmImgMgmtAutomationAccount -automationAccountName $imgAutomationAccountName `
-            -resourceGroupName (Get-ConfigValue $config.automationAccount.resourceGroup $config) `
-            -location (Get-ConfigValue $config.automationAccount.location $config) `
-            -applicationDisplayName $imgApplicationDisplayName `
-            -subscriptionId (Get-ConfigValue $config.automationAccount.subscriptionId $config) `
-            -modulesContainerUrl ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))) `
-            -sasToken $sasToken `
-            -runbooks $config.automationAccount.runbooks.imageCreationProcessAutomationAccount `
-            -config $config `
-            -basicTier
+        Write-Verbose "Submitting PS Job to create image creation process automation account $imgAutomationAccountName" -Verbose
+        $automationAccountPSJobs += Start-Job -ScriptBlock $sb -ArgumentList $azureCredential,  `
+                                                                             $imgAutomationAccountName, `
+                                                                             (Get-ConfigValue $config.automationAccount.resourceGroup $config), `
+                                                                             (Get-ConfigValue $config.automationAccount.location $config), `
+                                                                             $imgApplicationDisplayName, `
+                                                                             (Get-ConfigValue $config.automationAccount.subscriptionId $config), `
+                                                                             ([string]::Format("{0}{1}",$tier0StorageAccountContext.BlobEndPoint,(Get-ConfigValue $config.storage.tier0StorageAccount.modulesContainer $config))), `
+                                                                             $sasToken, `
+                                                                             $config.automationAccount.runbooks.imageCreationProcessAutomationAccount, `
+                                                                             $config, `
+                                                                             $true, `
+                                                                             $scriptPath
 
-        # Adding the main automation account info in the configuration table
-        [hashtable]$imgAutomationAccountProps = @{ "automationAccountName"=$imgAutomationAccountName;
-                                            "resourceGroupName"=Get-ConfigValue $config.automationAccount.resourceGroup $config;
-                                            "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
-                                            "applicationDisplayName"=$imgApplicationDisplayName;
-                                            "type"="ImageCreationDedicated";
-                                            "maxJobsCount"=Get-ConfigValue $config.automationAccount.maxDedicatedImageCreationJobs $config;
-                                            "location"=Get-ConfigValue $config.automationAccount.location $config;
-                                            "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
+        $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$imgAutomationAccountName;"type"="ImageCreationDedicated"}
+    }
+}
 
-        Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $imgAutomationAccountProps 
+# Checking all jobs completion
+$errorList = @()
+$checkStart = [Datetime]::Now
+$hourExecutionLimit = 2
+
+while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($automationAccountPSJobs, [Func[object,bool]]{ param($x); $x.hasmoredata -eq $true })).count -ne 0)
+{
+    Write-Verbose "Checking PS jobs status every 5 minutes. Time: $(Get-Date -Format s)"
+    foreach ($job in $automationAccountPSJobs)
+    {
+        if ((($job.State -eq "Completed") -or ($job.State -eq "Failed")) -and ($job.HasMoreData -eq $true)) 
+        {
+            # Receive Job results
+            try
+            {
+               Receive-Job -Job $job -ErrorAction Stop
+            }
+            catch
+            {
+                $errorList += $_
+            }
+        }
+    }
+
+    if ((New-TimeSpan ([datetime]::now) $checkstart).hours -ge $hourExecutionLimit)
+    {
+        $errorList += "Time out of $hourExecutionLimit hours exceeded!"
+        break
+    }
+
+    start-sleep -Seconds 30
+}
+
+# Checking for errors and stop setup if any
+if ($errorList.Count -gt 0)
+{
+    throw "An error ocurred while creating the automation accounts. Error messages:`n$ErrorList"
+}
+
+# Removing all jobs
+Get-Job | Remove-Job
+
+# Checking each automation account and creating the configuration table entries
+
+foreach ($automationAccount in $automationAccountsCheckList)
+{
+    $result = Find-AzureRmResource -ResourceGroupName  (Get-ConfigValue $config.automationAccount.resourceGroup $config) -ResourceNameEquals $automationAccount.name
+    
+    if ($result -ne $null)
+    {
+        $customFilter = "(PartitionKey eq 'automationAccount') and (automationAccountName eq '$($automationAccount.name)')"
+        $configQueryResult = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $configurationTable
+    
+        if ($configQueryResult -eq $null)
+        {
+            # Adding the automation account info in the configuration table
+            [hashtable]$mainAutomationAccountProps = @{ "automationAccountName"=$automationAccount.name;
+                                                        "resourceGroupName"=Get-ConfigValue $config.automationAccount.resourceGroup $config;
+                                                        "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
+                                                        "applicationDisplayName"=Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config;
+                                                        "type"=$automationAccount.type;
+                                                        "location"=Get-ConfigValue $config.automationAccount.location $config;
+                                                        "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
+    
+            Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $mainAutomationAccountProps    
+        }
+    }
+    else
+    {
+        throw "Automation account $($automationAccount.name) of type $($automationAccount.type) could not be found."
     }
 }
 #endregion
@@ -410,19 +516,7 @@ $mainAutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(
 # Getting the authorization token
 Write-Verbose "Obtaining a token for the rest api calls against Azure AD" -Verbose
 $tenantName = Get-ConfigValue $config.general.tenantName $config
-
-$currentUserid = [Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier]::New((Get-AzureRmContext).Account.Id,[Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifierType]::RequiredDisplayableId)
-
-if ($currentUserId.Id.Contains("@"))
-{
-    # Based on UPN
-    $token = Get-AzureRmImgMgmtAuthToken -TenantName $tenantName -userId $currentUserId -promptBehavior ([Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Never)
-}
-else
-{
-    # based on guid
-    $token = Get-AzureRmImgMgmtAuthToken -TenantName $tenantName -promptBehavior ([Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Auto)
-}
+$token = Get-AzureRmImgMgmtAuthToken -TenantName $tenantName -Credential $azureCredential
 
 # Building Rest Api header with authorization token
 $authHeader = Get-AzureRmImgMgmtAuthHeader -AuthToken $token 

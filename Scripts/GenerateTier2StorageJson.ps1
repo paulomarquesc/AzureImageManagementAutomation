@@ -53,8 +53,6 @@ param
 
     [Parameter(Mandatory=$true)]
     [string]$storageAccountPrefix
-    
-
 )
 
 function createStorageAccountEntry

@@ -212,6 +212,8 @@ else
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
     # Getting mananaged disk SAS token based URL
+
+    # TODO: use an option to retrieve the VHD from storage account using a regular URL or an URI with the SAS Token already attached
     try
     {
         $msg = "Getting mananaged disk SAS token based URL"
