@@ -892,8 +892,12 @@ function New-AzureRmImgMgmtAutomationAccount
          # Adding Tier2 Distribution Runbook
         if ($rb.scriptPath.StartsWith("https://"))
         {
-            Write-Verbose "Downloading the script file from $(Get-ConfigValue $rb.scriptPath $config) to local path $(Join-Path $localRunbooksPath ([system.io.path]::GetFileName((Get-ConfigValue $rb.scriptPath $config))))" -Verbose
-            Invoke-WebRequest -uri (Get-ConfigValue $rb.scriptPath $config) -OutFile (Join-Path $localRunbooksPath ([system.io.path]::GetFileName((Get-ConfigValue $rb.scriptPath $config))))
+            if (!(Test-Path (Join-Path $localRunbooksPath ([system.io.path]::GetFileName((Get-ConfigValue $rb.scriptPath $config))))))
+            {
+                Write-Verbose "Downloading the script file from $(Get-ConfigValue $rb.scriptPath $config) to local path $(Join-Path $localRunbooksPath ([system.io.path]::GetFileName((Get-ConfigValue $rb.scriptPath $config))))" -Verbose
+                Invoke-WebRequest -uri (Get-ConfigValue $rb.scriptPath $config) -OutFile (Join-Path $localRunbooksPath ([system.io.path]::GetFileName((Get-ConfigValue $rb.scriptPath $config))))
+            }
+
             $rb.scriptPath = (Join-Path $localRunbooksPath ([system.io.path]::GetFileName((Get-ConfigValue $rb.scriptPath $config))))
         }
 
