@@ -81,7 +81,7 @@ Write-Verbose "Selecting main (tier0) subscription $tier0subscriptionId"
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
 #endregion
 
-#region Check if resource group exists, create if not 
+#region Check if resource group and tier 0 storage account exists, create if don't 
 Write-Verbose "Checking if resource group exists, create it if not." -Verbose
 $rg = Get-AzureRmResourceGroup -Name $tier0StorageAccountRG -ErrorAction SilentlyContinue
 if ($rg -eq $null)
@@ -183,84 +183,179 @@ foreach ($module in $config.requiredModulesToInstall)
 #endregion
 
 #region Tier 2 storage setup - On each Tier 1 subscription
+
+# ScriptBlock that invokes the Automation Account creation
+[ScriptBlock]$storageAccountCreationScriptBlock = {
+    param
+    (
+        [PSCredential]$cred,
+        [string]$StorageAccountName,
+        [string]$StorageAccountResourceGroup,
+        [string]$Location,
+        [string]$imagesResourceGroup,
+        [string]$SubscriptionId,
+        [bool]$Verbose
+    )
+
+    Add-AzureRmAccount -Credential $cred
+    Select-AzureRmSubscription -SubscriptionId $SubscriptionId
+
+    New-AzureRmStorageAccount -ResourceGroupName $storageAccountResourceGroup -Name $storageAccountName -SkuName Standard_LRS -Location $location -Kind BlobStorage -AccessTier Cool
+}
+
+$storageAccountPSJobs = @()
+$storageAccountsCheckList = @()
+
 Write-Verbose "Tier 2 storage setup - On each Tier 1 subscription" -Verbose
 
 Select-AzureRmSubscription -SubscriptionId (Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config)
 
-Write-Verbose "Creating tier 2 storage accounts" -Verbose
-
 foreach ($t2Storage in $config.storage.tier2StorageAccounts)
 {
-    # Check configuration table for an existing Id
-    $customQuery = [string]::Format("(PartitionKey eq 'storage') and (tier eq 2) and (id eq '{0}')",$t2Storage.id)
+    # Check configuration table for an existing storage account Id
+    $storageId = (Get-ConfigValue $t2Storage.id $config).ToString()
+    $customQuery = [string]::Format("(PartitionKey eq 'storage') and (tier eq 2) and (id eq '{0}')",$storageId)
     $tier2StorageItem = Get-AzureStorageTableRowByCustomFilter -customFilter $customQuery -table $configurationTable
 
     if ($tier2StorageItem -eq $null)
     {
-        # Getting some values
+        $subscriptionId = Get-ConfigValue $t2Storage.subscriptionId $config
         $saName = Get-ConfigValue $t2Storage.storageAccountName $config
-        Write-Verbose "Tier 2 Storage Account name $saname" -Verbose
+        $resourceGroup = Get-ConfigValue $t2Storage.resourceGroup $config
+        $location = Get-ConfigValue $t2Storage.location $config
+        $imagesResourceGroup = Get-ConfigValue $t2Storage.imagesResourceGroup $config
 
-        $tier2subscriptionId = Get-ConfigValue $t2Storage.subscriptionId $config
-        Write-Verbose "Subscription $tier2subscriptionId" -Verbose
+        Select-AzureRmSubscription -SubscriptionId $SubscriptionId
 
-        Select-AzureRmSubscription -SubscriptionId $tier2subscriptionId
-
-        Write-Verbose "Working on tier 2 storage account $saName at subscription $tier2subscriptionId" -Verbose
-        
-        # create resource group for storage account if not found
-        # Waiting 10 seconds
-        Start-Sleep -Seconds 10
-
-        # Tier 2 storage account resource groups
-        $rg = Get-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.resourceGroup $config) -ErrorAction SilentlyContinue
+        # Creating Tier 2 storage account resource group if it doesn't exist
+        $rg = Get-AzureRmResourceGroup -Name $resourceGroup -ErrorAction SilentlyContinue
         if ($rg -eq $null)
         {
-            Write-Verbose "Creating solution rerource group $(Get-ConfigValue $t2Storage.resourceGroup $config)" -Verbose
-            New-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.resourceGroup $config) -Location (Get-ConfigValue $t2Storage.location $config)
+            Write-Verbose "Creating solution rerource group $resourceGroup" -Verbose
+            New-AzureRmResourceGroup -Name $resourceGroup -Location $location -Force
+            Start-Sleep -Seconds 10
         }
-
-        # Image resource groups
-        $rg1 = Get-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.imagesResourceGroup $config) -ErrorAction SilentlyContinue
+    
+        # Creating Image resource group if it doesn't exist
+        $rg1 = Get-AzureRmResourceGroup -Name $imagesResourceGroup -ErrorAction SilentlyContinue
         if ($rg1 -eq $null)
         {
-            Write-Verbose "Creating images group $(Get-ConfigValue $t2Storage.imagesResourceGroup $config)" -Verbose
-            New-AzureRmResourceGroup -Name (Get-ConfigValue $t2Storage.imagesResourceGroup $config) -Location (Get-ConfigValue $t2Storage.location $config)
+            Write-Verbose "Creating images resource group $imagesResourceGroup" -Verbose
+            New-AzureRmResourceGroup -Name $imagesResourceGroup -Location $location -Force
         }
 
-        # Create the storage account
-        try
+        Write-Verbose "Submitting PS Job to create tier 2 storage account account $saName" -Verbose
+
+        $storageAccountPSJobs += Start-Job -ScriptBlock $storageAccountCreationScriptBlock -ArgumentList $azureCredential,  `
+                                                                                                         $saName, `
+                                                                                                         $resourceGroup, `
+                                                                                                         $location, `
+                                                                                                         $imagesResourceGroup, `
+                                                                                                         $subscriptionId, `
+                                                                                                         $true
+
+        $storageAccountsCheckList += New-Object -TypeName PSObject -Property  @{ "id"=$storageId;
+                                                                                 "resourceGroupName"=$resourceGroup;
+                                                                                 "storageAccountName"=$saName;
+                                                                                 "subscriptionId"=$subscriptionId;
+                                                                                 "tier"=2;
+                                                                                 "container"=(Get-ConfigValue $t2Storage.container $config);
+                                                                                 "location"=$location;
+                                                                                 "imagesResourceGroup"=$imagesResourceGroup;
+                                                                                 "enabled"=(Get-ConfigValue $t2Storage.enabled $config) }
+    }
+}
+
+# Checking all storage account creation jobs for completion
+$saErrorList = @()
+$checkStart = [Datetime]::Now
+$hourExecutionLimit = 1
+
+while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($storageAccountPSJobs, [Func[object,bool]]{ param($x); $x.hasmoredata -eq $true })).count -ne 0)
+{
+    Write-Verbose "Checking PS jobs status every 1 minutes. Time: $(Get-Date -Format s)" -Verbose
+    foreach ($job in $storageAccountPSJobs)
+    {
+        if ((($job.State -eq "Completed") -or ($job.State -eq "Failed")) -and ($job.HasMoreData -eq $true)) 
         {
-            New-AzureRmStorageAccount -ResourceGroupName (Get-ConfigValue $t2Storage.resourceGroup $config) -Name $saName -SkuName Standard_LRS -Location (Get-ConfigValue $t2Storage.location $config) -Kind BlobStorage -AccessTier Cool
-            
-            [hashtable]$tier2StorageProperties = @{ "id"=(Get-ConfigValue $t2Storage.id $config).ToString();
-                                                    "resourceGroupName"=Get-ConfigValue $t2Storage.resourceGroup $config;
-                                                    "storageAccountName"=$saName;
-                                                    "subscriptionId"=Get-ConfigValue $t2Storage.subscriptionId $config;
-                                                    "tier"=2;
-                                                    "container"=Get-ConfigValue $t2Storage.container $config;
-                                                    "location"=Get-ConfigValue $t2Storage.location $config;
-                                                    "imagesResourceGroup"=Get-ConfigValue $t2Storage.imagesResourceGroup $config;
-                                                    "enabled"=Get-ConfigValue $t2Storage.enabled $config}
+            # Receive Job results
+            try
+            {
+               Receive-Job -Job $job -ErrorAction Stop
+            }
+            catch
+            {
+                $saErrorList += $_
+            }
+        }
+    }
+
+    if ((New-TimeSpan ([datetime]::now) $checkstart).hours -ge $hourExecutionLimit)
+    {
+        $saErrorList += "Time out of $hourExecutionLimit hours exceeded!"
+        break
+    }
+
+    start-sleep -Seconds 60
+}
+
+# Checking for errors and stop setup if any
+if ($saErrorList.Count -gt 0)
+{
+    throw "An error ocurred while creating the storage accounts. Error messages:`n$saErrorList"
+}
+
+# Removing all jobs
+Get-Job | Remove-Job
+
+# Checking each storage account and creating the configuration table entries
+Write-Verbose "Checking each storage account and creating the configuration table entries" -Verbose
+
+foreach ($storageAccount in $storageAccountsCheckList)
+{
+    Select-AzureRmSubscription -SubscriptionId $storageAccount.subscriptionId
+
+    $result = Find-AzureRmResource -ResourceGroupName  $storageAccount.resourceGroupName -ResourceNameEquals $storageAccount.storageAccountName
+    
+    if ($result -ne $null)
+    {
+        $customFilter = "(PartitionKey eq 'storage') and (storageAccountName eq '$($storageAccount.storageAccountName)')"
+        $configQueryResult = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $configurationTable
+    
+        if ($configQueryResult -eq $null)
+        {
+            # Adding the storage account info in the configuration table
+            [hashtable]$tier2StorageProperties = @{ "id"=$storageAccount.Id;
+                                                    "resourceGroupName"=$storageAccount.resourceGroupName;
+                                                    "storageAccountName"=$storageAccount.storageAccountName;
+                                                    "subscriptionId"=$storageAccount.subscriptionId;
+                                                    "tier"=$storageAccount.tier;
+                                                    "container"=$storageAccount.container;
+                                                    "location"=$storageAccount.location;
+                                                    "imagesResourceGroup"=$storageAccount.imagesResourceGroup;
+                                                    "enabled"=$storageAccount.enabled}
 
             Add-AzureStorageTableRow -table $configurationTable -partitionKey "storage" -rowKey ([guid]::NewGuid().guid) -property $tier2StorageProperties 
-        }
-        catch
-        {
-            throw "Error creating tier 2 storage account database id $($t2Storage.id), named $saName in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId). `nError Details: $_"
         }
     }
     else
     {
-        Write-Verbose "Tier 2 Storage database id $($t2Storage.id), named $saName in resource group $($t2Storage.resourceGroupName) at subscription $($t2Storage.subscriptionId) already exists"    
+        $saErrorList += "Storage account $($storageAccount.storageAccountName) in resource group $($storageAccount.resourceGroupName) at subscription $($storageAccount.subscriptionId) could not be found."
     }
 }
+
+if ($saErrorList.Count -gt 0)
+{
+    throw "An error ocurred during the process of creating the storage accounts while adding its information to the configuration table. Error messages:`n$saErrorList"
+}
+
+
 #endregion
 
 #region Setting up Automation and RunAs Accounts
 
 # ScriptBlock that invokes the Automation Account creation
-[ScriptBlock]$sb = {
+[ScriptBlock]$automationAccountsScriptBlock = {
     param
     (
         [PSCredential]$cred,
@@ -314,7 +409,7 @@ if ($result -eq $null)
     }
 
     Write-Verbose "Submitting PS Job to create main automation account $mainAutomationAccountName" -Verbose
-    $automationAccountPSJobs += Start-Job -ScriptBlock $sb -ArgumentList $azureCredential,  `
+    $automationAccountPSJobs += Start-Job -ScriptBlock $automationAccountsScriptBlock -ArgumentList $azureCredential,  `
                                                                          $mainAutomationAccountName, `
                                                                          (Get-ConfigValue $config.automationAccount.resourceGroup $config), `
                                                                          (Get-ConfigValue $config.automationAccount.location $config), `
@@ -349,7 +444,7 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
         }
 
         Write-Verbose "Submitting PS Job to create copy process automation account $copyAutomationAccountName" -Verbose
-        $automationAccountPSJobs += Start-Job -ScriptBlock $sb -ArgumentList $azureCredential,  `
+        $automationAccountPSJobs += Start-Job -ScriptBlock $automationAccountsScriptBlock -ArgumentList $azureCredential,  `
                                                                             $copyAutomationAccountName, `
                                                                             (Get-ConfigValue $config.automationAccount.resourceGroup $config), `
                                                                             (Get-ConfigValue $config.automationAccount.location $config), `
@@ -385,7 +480,7 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
         }
 
         Write-Verbose "Submitting PS Job to create image creation process automation account $imgAutomationAccountName" -Verbose
-        $automationAccountPSJobs += Start-Job -ScriptBlock $sb -ArgumentList $azureCredential,  `
+        $automationAccountPSJobs += Start-Job -ScriptBlock $automationAccountsScriptBlock -ArgumentList $azureCredential,  `
                                                                              $imgAutomationAccountName, `
                                                                              (Get-ConfigValue $config.automationAccount.resourceGroup $config), `
                                                                              (Get-ConfigValue $config.automationAccount.location $config), `
@@ -403,13 +498,13 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
 }
 
 # Checking all jobs completion
-$errorList = @()
+$aaErrorList = @()
 $checkStart = [Datetime]::Now
 $hourExecutionLimit = 2
 
 while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($automationAccountPSJobs, [Func[object,bool]]{ param($x); $x.hasmoredata -eq $true })).count -ne 0)
 {
-    Write-Verbose "Checking PS jobs status every 5 minutes. Time: $(Get-Date -Format s)"
+    Write-Verbose "Checking PS jobs status every 5 minutes. Time: $(Get-Date -Format s)" -Verbose
     foreach ($job in $automationAccountPSJobs)
     {
         if ((($job.State -eq "Completed") -or ($job.State -eq "Failed")) -and ($job.HasMoreData -eq $true)) 
@@ -421,24 +516,24 @@ while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($automa
             }
             catch
             {
-                $errorList += $_
+                $aaErrorList += $_
             }
         }
     }
 
     if ((New-TimeSpan ([datetime]::now) $checkstart).hours -ge $hourExecutionLimit)
     {
-        $errorList += "Time out of $hourExecutionLimit hours exceeded!"
+        $aaErrorList += "Time out of $hourExecutionLimit hours exceeded!"
         break
     }
 
-    start-sleep -Seconds 30
+    start-sleep -Seconds 300
 }
 
 # Checking for errors and stop setup if any
-if ($errorList.Count -gt 0)
+if ($aaErrorList.Count -gt 0)
 {
-    throw "An error ocurred while creating the automation accounts. Error messages:`n$ErrorList"
+    throw "An error ocurred while creating the automation accounts. Error messages:`n$aaErrorList"
 }
 
 # Removing all jobs
@@ -471,8 +566,13 @@ foreach ($automationAccount in $automationAccountsCheckList)
     }
     else
     {
-        throw "Automation account $($automationAccount.name) of type $($automationAccount.type) could not be found."
+        $aaErrorList += "Automation account $($automationAccount.name) of type $($automationAccount.type) could not be found."
     }
+}
+
+if ($aaErrorList.Count -gt 0)
+{
+    throw "An error ocurred during the process of creating the automation accounts while adding its information to the configuration table. Error messages:`n$aaErrorList"
 }
 #endregion
 

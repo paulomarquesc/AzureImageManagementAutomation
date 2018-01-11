@@ -387,7 +387,7 @@ class ImageMgmtTier2StorageAccount : ImageMgmtStorageAccount
 
 #region Module Functions
 
-#region Functions Required by New-AzureRmImgMgmtRunAsAccount
+#region Functions Required by New-RunAsAccount
 function CreateSelfSignedCertificate([string] $keyVaultName, [string] $certificateName, [string] $selfSignedCertPlainPassword,
 [string] $certPath, [string] $certPathCer, [string] $selfSignedCertNoOfMonthsUntilExpired )
 {
@@ -451,6 +451,164 @@ function CreateAutomationConnectionAsset ([string] $resourceGroup, [string] $aut
     New-AzureRmAutomationConnection -ResourceGroupName $ResourceGroup -AutomationAccountName $automationAccountName -Name $connectionAssetName -ConnectionTypeName $connectionTypeName -ConnectionFieldValues $connectionFieldValues
 }
 #endregion
+
+
+function New-AzureRmImgMgmtTier2StorageAccount
+{
+    <#
+	.SYNOPSIS
+		Creates tier 2 storage accounts.
+	.DESCRIPTION
+		Creates tier 2 storage accounts.
+    .PARAMETER ConfigStorageAccountResourceGroupName
+        Resource Group name where the Azure Storage Account that contains the system configuration tables.
+    .PARAMETER ConfigStorageAccountName
+        Name of the Storage Account that contains the system configuration tables
+    .PARAMETER ConfigurationTableName
+        Name of the configuration table, default to ImageManagementConfiguration, which is the preferred name.
+    .PARAMETER ConfigurationTable
+        Configuration table object.
+    .PARAMETER StorageAccountId
+        User defined string that will uniquely identify the storage account in the solution table, this is to avoid duplicating tier 2 storage accounts.
+    .PARAMETER StorageAccountName
+        User defined Storage Account Name, best way to get this is to obtain this name using the StorageAccountName class from the AzureImageManagement PS module.
+    .PARAMETER StorageAccountResourceGroup
+        Resource group where this storage account will be created.
+    .PARAMETER Container
+        Container to be used to receive the VHD blob during tier 2 VHD distribution process
+    .PARAMETER Location
+        Storage account location, this is also used for the resource groups created by this cmdlet as well
+    .PARAMETER ImagesResourceGroup
+        Resource Group that will be used to have the final Managed Image created
+    .PARAMETER Enabled
+        This boolean parameter tells the cmdlet if the storage account will be marked as enabled or not, defaults to enabled = $true
+    .PARAMETER SubscriptionId
+        Subscription where all resrouces created by this cmdlet will be located.
+    .EXAMPLE
+        # Manually creating a  new tier 2 storage account that was included in the setup info json file as the first tier 2 storage account
+
+        add-azurermaccount
+
+        $configfile = ".\..\local\SetupInfoPmc.New-2017-12-15T07_55_52.json"
+        $config = get-content $configFile -Raw | convertfrom-json
+        $tier0SaName = $config.storage.tier0StorageAccount.storageAccountName
+        $tier0StorageAccountRG = Get-ConfigValue $config.storage.tier0StorageAccount.resourceGroup $config
+        $tier0StorageAccountLocation = Get-ConfigValue $config.storage.tier0StorageAccount.location $config
+        
+        $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $tier0StorageAccountRG -StorageAccountName $tier0SaName -tableName (Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)
+        
+        $t2Storage = ($config.storage.tier2StorageAccounts)[0]
+
+        New-AzureRmImgMgmtTier2StorageAccount -ConfigurationTable $configurationTable `
+            -StorageAccountId (Get-ConfigValue $t2Storage.id $config).ToString() `
+            -StorageAccountName (Get-ConfigValue $t2Storage.storageAccountName $config) `
+            -StorageAccountResourceGroup (Get-ConfigValue $t2Storage.resourceGroup $config) `
+            -Container (Get-ConfigValue $t2Storage.container $config) `
+            -Location (Get-ConfigValue $t2Storage.location $config) `
+            -ImagesResourceGroup (Get-ConfigValue $t2Storage.imagesResourceGroup $config) `
+            -Enabled (Get-ConfigValue $t2Storage.enabled $config) `
+            -SubscriptionId (Get-ConfigValue $t2Storage.subscriptionId $config) `
+            -Verbose
+    #>
+
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountResourceGroupName,
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigSettings")]
+        [string]$ConfigStorageAccountName,
+        
+        [Parameter(Mandatory=$false,ParameterSetName="withConfigSettings")]
+        [AllowNull()]
+        [string]$ConfigurationTableName= "imageManagementConfiguration",
+
+        [Parameter(Mandatory=$true,ParameterSetName="withConfigTable")]
+        $ConfigurationTable,
+
+        [Parameter(Mandatory=$true)]
+        [string]$StorageAccountId,
+
+        [Parameter(Mandatory=$true)]
+        [string]$StorageAccountName,
+
+        [Parameter(Mandatory=$true)]
+        [string]$StorageAccountResourceGroup,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Container,
+
+        [Parameter(Mandatory=$true)]
+        [string]$Location,
+
+        [Parameter(Mandatory=$true)]
+        [string]$ImagesResourceGroup,
+
+        [Parameter(Mandatory=$false)]
+        [bool]$Enabled=$true,
+
+        [Parameter(Mandatory=$true)]
+        [string]$SubscriptionId
+    )
+
+   # Check configuration table for an existing Id
+   $customQuery = [string]::Format("(PartitionKey eq 'storage') and (tier eq 2) and (id eq '{0}')",$storageAccountId)
+   $tier2StorageItem = Get-AzureStorageTableRowByCustomFilter -customFilter $customQuery -table $configurationTable
+
+   if ($tier2StorageItem -eq $null)
+   {
+       Write-Verbose "Tier 2 Storage Account name $storageAccountName"
+       Write-Verbose "Subscription $subscriptionId"
+
+       Select-AzureRmSubscription -SubscriptionId $subscriptionId
+
+       # create resource group for storage account if not found
+
+       # Tier 2 storage account resource groups
+       $rg = Get-AzureRmResourceGroup -Name $storageAccountResourceGroup -ErrorAction SilentlyContinue
+       if ($rg -eq $null)
+       {
+           Write-Verbose "Creating solution rerource group $storageAccountResourceGroup"
+           New-AzureRmResourceGroup -Name $storageAccountResourceGroup -Location $location
+           Start-Sleep -Seconds 10
+       }
+
+       # Image resource groups
+       $rg1 = Get-AzureRmResourceGroup -Name $imagesResourceGroup -ErrorAction SilentlyContinue
+       if ($rg1 -eq $null)
+       {
+           Write-Verbose "Creating images group $imagesResourceGroup" -Verbose
+           New-AzureRmResourceGroup -Name $imagesResourceGroup -Location $location
+       }
+
+       # Create the storage account
+       try
+       {
+           New-AzureRmStorageAccount -ResourceGroupName $storageAccountResourceGroup -Name $storageAccountName -SkuName Standard_LRS -Location $location -Kind BlobStorage -AccessTier Cool
+           
+           [hashtable]$tier2StorageProperties = @{ "id"=$storageAccountId;
+                                                   "resourceGroupName"=$storageAccountResourceGroup;
+                                                   "storageAccountName"=$storageAccountName;
+                                                   "subscriptionId"=$subscriptionId;
+                                                   "tier"=2;
+                                                   "container"=$container;
+                                                   "location"=$location;
+                                                   "imagesResourceGroup"=$imagesResourceGroup;
+                                                   "enabled"=$enabled}
+
+           Add-AzureStorageTableRow -table $configurationTable -partitionKey "storage" -rowKey ([guid]::NewGuid().guid) -property $tier2StorageProperties 
+       }
+       catch
+       {
+           throw "Error creating tier 2 storage account database id $storageAccountId, named $storageAccountName in resource group $storageAccountResourceGroup at subscription $subscriptionId. `nError Details: $_"
+       }
+   }
+   else
+   {
+       Write-Verbose "Tier 2 Storage database id $storageAccountId, named $storageAccountName in resource group $storageAccountResourceGroup at subscription $subscriptionId already exists"    
+   }
+}
 
 function New-RunAsAccount
 {

@@ -5,6 +5,9 @@ Operations and Troubleshooting guide can be found at [Operations Guide](Operatio
 
 ## Release Notes
 
+### Release 1/11/2017
+* Implemented the same parallel execution applied to the Automation Accounts for tier 2 storage account configuration.
+
 ### Release 1/10/2017
 * Setup time drastically reduced when creating more than one worker automation accounts, all automation accounts setup now are executed in parallel.
 * Tier 2 storage accounts are now of Kind "Blob Storage" only
