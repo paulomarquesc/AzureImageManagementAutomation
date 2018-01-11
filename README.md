@@ -7,6 +7,7 @@ Operations and Troubleshooting guide can be found at [Operations Guide](Operatio
 
 ### Release 1/10/2017
 * Setup time drastically reduced when creating more than one worker automation accounts, all automation accounts setup now are executed in parallel.
+* Tier 2 storage accounts are now of Kind "Blob Storage" only
 
 ### Release 12/21/2017
 * Included a test during setup phase to check if Microsoft.Compute resource provider is registered and perform registration if not
