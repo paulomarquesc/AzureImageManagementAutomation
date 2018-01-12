@@ -631,10 +631,17 @@ $servicePrincipalList = (Invoke-RestMethod -Uri $uri -Headers $authHeader -Metho
 $tier2SubscriptionList = @()
 $tier2SubscriptionList += Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 0)" -table $configurationTable
 
-if ($servicePrincipalList -ne $null)
+Write-Verbose "Getting Tier 2 subscription List" -Verbose
+$tier2SubscriptionList += Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
+
+# Removing duplicates
+if ($tier2SubscriptionList -ne $null)
 {
-    Write-Verbose "Getting Tier 2 subscription List" -Verbose
-    $tier2SubscriptionList += Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'storage') and (tier eq 2)" -table $configurationTable
+    $tier2SubscriptionList = $tier2SubscriptionList | Select-Object -Property subscriptionId, resourceGroupName, imagesResourceGroup -Unique
+}
+
+if (($servicePrincipalList -ne $null) -and ($tier2SubscriptionList -ne $null) )
+{
     foreach ($sub in $tier2SubscriptionList)
     {
         Write-Verbose "Working on tier 2 subscription $(Get-ConfigValue $sub.SubscriptionID $config)" -Verbose

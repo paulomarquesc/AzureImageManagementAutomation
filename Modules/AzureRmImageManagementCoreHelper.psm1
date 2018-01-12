@@ -493,7 +493,6 @@ function New-AzureRmImgMgmtTier2StorageAccount
         $config = get-content $configFile -Raw | convertfrom-json
         $tier0SaName = $config.storage.tier0StorageAccount.storageAccountName
         $tier0StorageAccountRG = Get-ConfigValue $config.storage.tier0StorageAccount.resourceGroup $config
-        $tier0StorageAccountLocation = Get-ConfigValue $config.storage.tier0StorageAccount.location $config
         
         $configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $tier0StorageAccountRG -StorageAccountName $tier0SaName -tableName (Get-ConfigValue $config.storage.tier0StorageAccount.configurationTableName $config)
         

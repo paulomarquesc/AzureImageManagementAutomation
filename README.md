@@ -7,6 +7,7 @@ Operations and Troubleshooting guide can be found at [Operations Guide](Operatio
 
 ### Release 1/11/2017
 * Implemented the same parallel execution applied to the Automation Accounts for tier 2 storage account configuration.
+* Optimized the RBAC role associations based on tier 2 storage account list by removing duplications
 
 ### Release 1/10/2017
 * Setup time drastically reduced when creating more than one worker automation accounts, all automation accounts setup now are executed in parallel.
