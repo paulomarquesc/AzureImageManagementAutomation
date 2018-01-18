@@ -40,6 +40,106 @@ param
     [PSCredential]$azureCredential
 )
 
+#region Sccript Blocks used for PowerShell Jobs
+
+# ScriptBlock that performs storage account creation
+[ScriptBlock]$storageAccountCreationScriptBlock = {
+    param
+    (
+        [PSCredential]$cred,
+        [string]$StorageAccountName,
+        [string]$StorageAccountResourceGroup,
+        [string]$Location,
+        [string]$imagesResourceGroup,
+        [string]$SubscriptionId,
+        [bool]$Verbose
+    )
+
+    Add-AzureRmAccount -Credential $cred
+    Select-AzureRmSubscription -SubscriptionId $SubscriptionId
+
+    New-AzureRmStorageAccount -ResourceGroupName $storageAccountResourceGroup -Name $storageAccountName -SkuName Standard_LRS -Location $location -Kind BlobStorage -AccessTier Cool
+}
+
+# ScriptBlock that invokes the Automation Account creation
+[ScriptBlock]$automationAccountsScriptBlock = {
+    param
+    (
+        [PSCredential]$cred,
+        $automationAccountName,
+        $resourceGroupName,
+        $location,
+        $applicationDisplayName,
+        $subscriptionId,
+        $modulesContainerUrl,
+        $sasToken,
+        $runbooks,
+        $config,
+        $basicTier,
+        $localRunbooksPath
+    )
+
+    Add-AzureRmAccount -Credential $cred
+
+    New-AzureRmImgMgmtAutomationAccount -automationAccountName $automationAccountName `
+        -resourceGroupName $resourceGroupName `
+        -location $location `
+        -applicationDisplayName $applicationDisplayName `
+        -subscriptionId $subscriptionId `
+        -modulesContainerUrl $modulesContainerUrl `
+        -sasToken $sasToken `
+        -runbooks $runbooks `
+        -config $config `
+        -basicTier:$basicTier `
+        -localRunbooksPath $localRunbooksPath
+}
+
+# ScriptBlock that performs RBAC assigments 
+[scriptBlock]$rbacAssignmentScriptBlock = {
+    param
+    (
+        [PSCredential]$cred,
+        [string]$subscriptionID,
+        [string]$resourceGroup,
+        [string]$imagesResourceGroup,
+        $servicePrincipalList
+    )
+
+    Add-AzureRmAccount -Credential $cred
+    Select-AzureRmSubscription -SubscriptionId $subscriptionID
+
+    $scope =  "/subscriptions/$subscriptionID/resourceGroups/$resourceGroup"
+    $imagesScope =  "/subscriptions/$subscriptionID/resourceGroups/$imagesResourceGroup"
+    
+    # Register Microsoft.Compute if not already registered
+    $computeResourceProvider = Get-AzureRmResourceProvider -ProviderNamespace Microsoft.Compute | Where-Object {$_.RegistrationState -eq "Registered"} `
+                                                                                                | Select-Object -ExpandProperty ResourceTypes `
+                                                                                                | Where-Object {$_.ResourceTypeName -eq "disks"}
+
+    if ($computeResourceProvider -eq $null)
+    {
+        Register-AzureRmResourceProvider -ProviderNamespace "Microsoft.Compute"
+    }
+
+    # Adding role assignment for both resource groups
+    foreach ($servicePrincipal in $servicePrincipalList)
+    {
+        $roleAssignmentSolutionRg = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $scope -ErrorAction SilentlyContinue
+        if ($roleAssignmentSolutionRg -eq $null)
+        {
+            New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $scope
+        }
+
+        $roleAssignmentImagesRg = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $imagesScope -ErrorAction SilentlyContinue
+        if ($roleAssignmentImagesRg -eq $null)
+        {
+            New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $imagesScope
+        }
+    }
+}
+
+#endregion
+
 #region Gathering Information
 $ErrorActionPreference = "Stop"
 
@@ -184,25 +284,6 @@ foreach ($module in $config.requiredModulesToInstall)
 
 #region Tier 2 storage setup - On each Tier 1 subscription
 
-# ScriptBlock that invokes the Automation Account creation
-[ScriptBlock]$storageAccountCreationScriptBlock = {
-    param
-    (
-        [PSCredential]$cred,
-        [string]$StorageAccountName,
-        [string]$StorageAccountResourceGroup,
-        [string]$Location,
-        [string]$imagesResourceGroup,
-        [string]$SubscriptionId,
-        [bool]$Verbose
-    )
-
-    Add-AzureRmAccount -Credential $cred
-    Select-AzureRmSubscription -SubscriptionId $SubscriptionId
-
-    New-AzureRmStorageAccount -ResourceGroupName $storageAccountResourceGroup -Name $storageAccountName -SkuName Standard_LRS -Location $location -Kind BlobStorage -AccessTier Cool
-}
-
 $storageAccountPSJobs = @()
 $storageAccountsCheckList = @()
 
@@ -267,37 +348,7 @@ foreach ($t2Storage in $config.storage.tier2StorageAccounts)
 }
 
 # Checking all storage account creation jobs for completion
-$saErrorList = @()
-$checkStart = [Datetime]::Now
-$hourExecutionLimit = 1
-
-while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($storageAccountPSJobs, [Func[object,bool]]{ param($x); $x.hasmoredata -eq $true })).count -ne 0)
-{
-    Write-Verbose "Checking PS jobs status every 1 minutes. Time: $(Get-Date -Format s)" -Verbose
-    foreach ($job in $storageAccountPSJobs)
-    {
-        if ((($job.State -eq "Completed") -or ($job.State -eq "Failed")) -and ($job.HasMoreData -eq $true)) 
-        {
-            # Receive Job results
-            try
-            {
-               Receive-Job -Job $job -ErrorAction Stop
-            }
-            catch
-            {
-                $saErrorList += $_
-            }
-        }
-    }
-
-    if ((New-TimeSpan ([datetime]::now) $checkstart).hours -ge $hourExecutionLimit)
-    {
-        $saErrorList += "Time out of $hourExecutionLimit hours exceeded!"
-        break
-    }
-
-    start-sleep -Seconds 60
-}
+$saErrorList = Wait-AzureRmImgMgmtConfigPsJob -jobList $storageAccountPSJobs -timeOutInHours 1 -waitTimeBetweenChecksInSeconds 60
 
 # Checking for errors and stop setup if any
 if ($saErrorList.Count -gt 0)
@@ -353,45 +404,10 @@ if ($saErrorList.Count -gt 0)
 #endregion
 
 #region Setting up Automation and RunAs Accounts
-
-# ScriptBlock that invokes the Automation Account creation
-[ScriptBlock]$automationAccountsScriptBlock = {
-    param
-    (
-        [PSCredential]$cred,
-        $automationAccountName,
-        $resourceGroupName,
-        $location,
-        $applicationDisplayName,
-        $subscriptionId,
-        $modulesContainerUrl,
-        $sasToken,
-        $runbooks,
-        $config,
-        $basicTier,
-        $localRunbooksPath
-    )
-
-    Add-AzureRmAccount -Credential $cred
-
-    New-AzureRmImgMgmtAutomationAccount -automationAccountName $automationAccountName `
-        -resourceGroupName $resourceGroupName `
-        -location $location `
-        -applicationDisplayName $applicationDisplayName `
-        -subscriptionId $subscriptionId `
-        -modulesContainerUrl $modulesContainerUrl `
-        -sasToken $sasToken `
-        -runbooks $runbooks `
-        -config $config `
-        -basicTier:$basicTier `
-        -localRunbooksPath $localRunbooksPath
-}
-
 $automationAccountPSJobs = @()
 $automationAccountsCheckList = @()
 
 Write-Verbose "Setting up Automation and RunAs Accounts" -Verbose
-$tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
 
 # Adding Main automation account
@@ -497,38 +513,8 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
     }
 }
 
-# Checking all jobs completion
-$aaErrorList = @()
-$checkStart = [Datetime]::Now
-$hourExecutionLimit = 2
-
-while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($automationAccountPSJobs, [Func[object,bool]]{ param($x); $x.hasmoredata -eq $true })).count -ne 0)
-{
-    Write-Verbose "Checking PS jobs status every 5 minutes. Time: $(Get-Date -Format s)" -Verbose
-    foreach ($job in $automationAccountPSJobs)
-    {
-        if ((($job.State -eq "Completed") -or ($job.State -eq "Failed")) -and ($job.HasMoreData -eq $true)) 
-        {
-            # Receive Job results
-            try
-            {
-               Receive-Job -Job $job -ErrorAction Stop
-            }
-            catch
-            {
-                $aaErrorList += $_
-            }
-        }
-    }
-
-    if ((New-TimeSpan ([datetime]::now) $checkstart).hours -ge $hourExecutionLimit)
-    {
-        $aaErrorList += "Time out of $hourExecutionLimit hours exceeded!"
-        break
-    }
-
-    start-sleep -Seconds 300
-}
+# Checking all storage account creation jobs for completion
+$aaErrorList = Wait-AzureRmImgMgmtConfigPsJob -jobList $automationAccountPSJobs -timeOutInHours 3 -waitTimeBetweenChecksInSeconds 300 -Verbose
 
 # Checking for errors and stop setup if any
 if ($aaErrorList.Count -gt 0)
@@ -578,7 +564,6 @@ if ($aaErrorList.Count -gt 0)
 
 #region Creating queues
 Write-Verbose "Selecting tier 0 subscription $(Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config)" -Verbose
-$tier0subscriptionId = Get-ConfigValue $config.storage.tier0StorageAccount.subscriptionId $config
 Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
 
 $result = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable
@@ -607,7 +592,10 @@ if ($result -eq $null)
 #endregion
 
 #region Assign service principal contributor of the t2 involved subscriptions
+
 # Note: To perform this initial assigment the user executing this setup script must be owner of all t2 subscriptions
+
+Select-AzureRmSubscription -SubscriptionId $tier0subscriptionId
 
 Write-Verbose "Getting main automation account information from storage table..." -Verbose
 $mainAutomationAccount = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'automationAccount') and (type eq 'main')" -table $configurationTable
@@ -640,54 +628,36 @@ if ($tier2SubscriptionList -ne $null)
     $tier2SubscriptionList = $tier2SubscriptionList | Select-Object -Property subscriptionId, resourceGroupName, imagesResourceGroup -Unique
 }
 
+$rbacPSJobs = @()
+
 if (($servicePrincipalList -ne $null) -and ($tier2SubscriptionList -ne $null) )
 {
     foreach ($sub in $tier2SubscriptionList)
     {
-        Write-Verbose "Working on tier 2 subscription $(Get-ConfigValue $sub.SubscriptionID $config)" -Verbose
-        
-        $scope =  "/subscriptions/$($sub.SubscriptionID)/resourceGroups/$($sub.resourceGroupName)"
+        Write-Verbose "Submitting PS Job to apply RBAC for Service Principals on Subscription $($sub.SubscriptionId)" -Verbose
 
-        Write-Verbose "Tier2 Storage RG Scope: $scope" -Verbose
-
-        $imagesScope =  "/subscriptions/$($sub.SubscriptionID)/resourceGroups/$($sub.imagesResourceGroup)"
-       
-        Write-Verbose "Images RG Scope: $imagesScope" -Verbose
-
-        Select-AzureRmSubscription -SubscriptionId $sub.SubscriptionID
-
-        # Register Microsoft.Compute if not already registered
-        $computeResourceProvider = Get-AzureRmResourceProvider -ProviderNamespace Microsoft.Compute | Where-Object {$_.RegistrationState -eq "Registered"} `
-                                                                                                    | Select-Object -ExpandProperty ResourceTypes `
-                                                                                                    | Where-Object {$_.ResourceTypeName -eq "disks"}
-
-        if ($computeResourceProvider -eq $null)
-        {
-            Register-AzureRmResourceProvider -ProviderNamespace "Microsoft.Compute"
-        }
-
-        # Adding role assignment for both resource groups
-        foreach ($servicePrincipal in $servicePrincipalList)
-        {
-            $roleAssignmentSolutionRg = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $scope -ErrorAction SilentlyContinue
-            if ($roleAssignmentSolutionRg -eq $null)
-            {
-                Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
-                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $scope
-            }
-
-            $roleAssignmentImagesRg = Get-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName Contributor -Scope $imagesScope -ErrorAction SilentlyContinue
-            if ($roleAssignmentImagesRg -eq $null)
-            {
-                Write-Verbose "Performing contributor role assigment to service principal $($servicePrincipal.AppID)" -Verbose
-                New-AzureRmRoleAssignment -ServicePrincipalName $servicePrincipal.AppID -RoleDefinitionName "Contributor" -Scope $imagesScope
-            }
-        }
+        $rbacPSJobs += Start-Job -ScriptBlock $rbacAssignmentScriptBlock -ArgumentList $azureCredential,  `
+                                                                                       $sub.subscriptionID, `
+                                                                                       $sub.resourceGroupName, `
+                                                                                       $sub.imagesResourceGroup, `
+                                                                                       $servicePrincipalList
     }
+           
+    # Checking all rbac assigments jobs for completion
+    $rbacErrorList = Wait-AzureRmImgMgmtConfigPsJob -jobList $rbacPSJobs -timeOutInHours 2 -waitTimeBetweenChecksInSeconds 60
+    
+    # Checking for errors and stop setup if any
+    if ($rbacErrorList.Count -gt 0)
+    {
+        throw "An error ocurred while applying rbac. Error messages:`n$rbacErrorList"
+    }
+    
+    # Removing all jobs
+    Get-Job | Remove-Job
 }
 else
 {
-    throw "Service principal $($mainAutomationAccount.ApplicationDisplayName) not found at Azure AD tenant $($tenantName)"
+    throw "Service principals with prefix $($mainAutomationAccount.ApplicationDisplayName) not found at Azure AD tenant $($tenantName)"
 }
 #endregion
 

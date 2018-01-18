@@ -761,6 +761,52 @@ function Wait-ModuleImport
     Write-Verbose "Provisioning of module $moduleName completed with status $($module.ProvisioningState)" -Verbose
 }
 
+function Wait-AzureRmImgMgmtConfigPsJob
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        $jobList,
+        [Parameter(Mandatory=$false)]
+        [int]$timeOutInHours = 1,
+        [int]$waitTimeBetweenChecksInSeconds = 60
+    )
+
+    # Checking list for completion
+    $errorList = @()
+    $checkStart = [Datetime]::Now
+
+    while ([System.linq.Enumerable]::ToArray([System.Linq.Enumerable]::Where($jobList, [Func[object,bool]]{ param($x); $x.hasmoredata -eq $true })).count -ne 0)
+    {
+        foreach ($job in $jobList)
+        {
+            if ((($job.State -eq "Completed") -or ($job.State -eq "Failed")) -and ($job.HasMoreData -eq $true)) 
+            {
+                # Receive Job results
+                try
+                {
+                    Receive-Job -Job $job -ErrorAction Stop | Out-Null
+                }
+                catch
+                {
+                    $errorList += $_
+                }
+            }
+        }
+
+        if ((New-TimeSpan ([datetime]::now) $checkstart).hours -ge $timeOutInHours)
+        {
+            $errorList += "Time out of $timeOutInHours hours exceeded!"
+            break
+        }
+
+        Start-Sleep -Seconds $waitTimeBetweenChecksInSeconds
+    }
+
+    return ,$errorList
+}
+
 function Start-AzureRmImgMgmtVhdCopy
 {
     param
