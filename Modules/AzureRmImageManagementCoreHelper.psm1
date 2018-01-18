@@ -387,8 +387,8 @@ class ImageMgmtTier2StorageAccount : ImageMgmtStorageAccount
 
 #region Module Functions
 
-#region Functions Required by New-RunAsAccount
-function CreateSelfSignedCertificate([string] $keyVaultName, [string] $certificateName, [string] $selfSignedCertPlainPassword,
+#region Functions Required by New-AzureRmImgMgmtRunAsAccount
+function New-AzureRmImgMgmtSelfSignedCertificate([string] $keyVaultName, [string] $certificateName, [string] $selfSignedCertPlainPassword,
 [string] $certPath, [string] $certPathCer, [string] $selfSignedCertNoOfMonthsUntilExpired )
 {
     $Cert = New-SelfSignedCertificate -DnsName $certificateName -CertStoreLocation cert:\CurrentUser\My `
@@ -400,7 +400,7 @@ function CreateSelfSignedCertificate([string] $keyVaultName, [string] $certifica
     Export-Certificate -Cert ("Cert:\CurrentUser\My\" + $Cert.Thumbprint) -FilePath $certPathCer -Type CERT | Write-Verbose
 }
 
-function CreateServicePrincipal([System.Security.Cryptography.X509Certificates.X509Certificate2] $PfxCert, [string] $applicationDisplayName)
+function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Certificates.X509Certificate2] $PfxCert, [string] $applicationDisplayName)
 {  
     $CurrentDate = Get-Date
     $keyValue = [System.Convert]::ToBase64String($PfxCert.GetRawCertData())
@@ -438,14 +438,14 @@ function CreateServicePrincipal([System.Security.Cryptography.X509Certificates.X
     return $Application.ApplicationId.ToString();
 }
 
-function CreateAutomationCertificateAsset ([string] $resourceGroup, [string] $automationAccountName, [string] $certifcateAssetName,[string] $certPath, [string] $certPlainPassword, [Boolean] $Exportable)
+function New-AzureRmImgMgmtAutomationCertificateAsset ([string] $resourceGroup, [string] $automationAccountName, [string] $certifcateAssetName,[string] $certPath, [string] $certPlainPassword, [Boolean] $Exportable)
 {
     $CertPassword = ConvertTo-SecureString $certPlainPassword -AsPlainText -Force   
     Remove-AzureRmAutomationCertificate -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccountName -Name $certifcateAssetName -ErrorAction SilentlyContinue
     New-AzureRmAutomationCertificate -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccountName -Path $certPath -Name $certifcateAssetName -Password $CertPassword -Exportable:$Exportable  | write-verbose
 }
 
-function CreateAutomationConnectionAsset ([string] $resourceGroup, [string] $automationAccountName, [string] $connectionAssetName, [string] $connectionTypeName, [System.Collections.Hashtable] $connectionFieldValues )
+function New-AzureRmImgMgmtAutomationConnectionAsset ([string] $resourceGroup, [string] $automationAccountName, [string] $connectionAssetName, [string] $connectionTypeName, [System.Collections.Hashtable] $connectionFieldValues )
 {
     Remove-AzureRmAutomationConnection -ResourceGroupName $resourceGroup -AutomationAccountName $automationAccountName -Name $connectionAssetName -Force -ErrorAction SilentlyContinue
     New-AzureRmAutomationConnection -ResourceGroupName $ResourceGroup -AutomationAccountName $automationAccountName -Name $connectionAssetName -ConnectionTypeName $connectionTypeName -ConnectionFieldValues $connectionFieldValues
@@ -609,7 +609,7 @@ function New-AzureRmImgMgmtTier2StorageAccount
    }
 }
 
-function New-RunAsAccount
+function New-AzureRmImgMgmtRunAsAccount
 {
     # This function is based on script from https://docs.microsoft.com/en-us/azure/automation/automation-update-account-powershell
     # Using Cert:\CurrentUser\My instead of Cert:\LocalMachine\my
@@ -682,15 +682,15 @@ function New-RunAsAccount
         $PfxCertPathForRunAsAccount = Join-Path $env:TEMP ($CertificateName + ".pfx")
         $PfxCertPlainPasswordForRunAsAccount = $SelfSignedCertPlainPassword
         $CerCertPathForRunAsAccount = Join-Path $env:TEMP ($CertificateName + ".cer")
-        CreateSelfSignedCertificate $KeyVaultName $CertificateName $PfxCertPlainPasswordForRunAsAccount $PfxCertPathForRunAsAccount $CerCertPathForRunAsAccount $SelfSignedCertNoOfMonthsUntilExpired
+        New-AzureRmImgMgmtSelfSignedCertificate $KeyVaultName $CertificateName $PfxCertPlainPasswordForRunAsAccount $PfxCertPathForRunAsAccount $CerCertPathForRunAsAccount $SelfSignedCertNoOfMonthsUntilExpired
     }
 
     # Create a service principal
     $PfxCert = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @($PfxCertPathForRunAsAccount, $PfxCertPlainPasswordForRunAsAccount)
-    $ApplicationId=CreateServicePrincipal $PfxCert $ApplicationDisplayName
+    $ApplicationId=New-AzureRmImgMgmtServicePrincipal $PfxCert $ApplicationDisplayName
 
     # Create the Automation certificate asset
-    CreateAutomationCertificateAsset $ResourceGroup $AutomationAccountName $CertifcateAssetName $PfxCertPathForRunAsAccount $PfxCertPlainPasswordForRunAsAccount $true
+    New-AzureRmImgMgmtAutomationCertificateAsset $ResourceGroup $AutomationAccountName $CertifcateAssetName $PfxCertPathForRunAsAccount $PfxCertPlainPasswordForRunAsAccount $true
 
     # Populate the ConnectionFieldValues
     $SubscriptionInfo = Get-AzureRmSubscription -SubscriptionId $SubscriptionId
@@ -699,7 +699,7 @@ function New-RunAsAccount
     $ConnectionFieldValues = @{"ApplicationId" = $ApplicationId; "TenantId" = $TenantID.TenantId; "CertificateThumbprint" = $Thumbprint; "SubscriptionId" = $SubscriptionId}
 
     # Create an Automation connection asset named AzureRunAsConnection in the Automation account. This connection uses the service principal.
-    CreateAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ConnectionAssetName $ConnectionTypeName $ConnectionFieldValues
+    New-AzureRmImgMgmtAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ConnectionAssetName $ConnectionTypeName $ConnectionFieldValues
 
     if ($CreateClassicRunAsAccount)
     {
@@ -724,18 +724,18 @@ function New-RunAsAccount
             $PfxCertPlainPasswordForClassicRunAsAccount = $SelfSignedCertPlainPassword
             $CerCertPathForClassicRunAsAccount = Join-Path $env:TEMP ($ClassicRunAsAccountCertificateName + ".cer")
             $UploadMessage = $UploadMessage.Replace("#CERT#", $CerCertPathForClassicRunAsAccount)
-            CreateSelfSignedCertificate $KeyVaultName $ClassicRunAsAccountCertificateName $PfxCertPlainPasswordForClassicRunAsAccount $PfxCertPathForClassicRunAsAccount $CerCertPathForClassicRunAsAccount $SelfSignedCertNoOfMonthsUntilExpired
+            New-AzureRmImgMgmtSelfSignedCertificate $KeyVaultName $ClassicRunAsAccountCertificateName $PfxCertPlainPasswordForClassicRunAsAccount $PfxCertPathForClassicRunAsAccount $CerCertPathForClassicRunAsAccount $SelfSignedCertNoOfMonthsUntilExpired
         }
 
         # Create the Automation certificate asset
-        CreateAutomationCertificateAsset $ResourceGroup $AutomationAccountName $ClassicRunAsAccountCertifcateAssetName $PfxCertPathForClassicRunAsAccount $PfxCertPlainPasswordForClassicRunAsAccount $false
+        New-AzureRmImgMgmtAutomationCertificateAsset $ResourceGroup $AutomationAccountName $ClassicRunAsAccountCertifcateAssetName $PfxCertPathForClassicRunAsAccount $PfxCertPlainPasswordForClassicRunAsAccount $false
 
         # Populate the ConnectionFieldValues
         $SubscriptionName = $subscription.Subscription.Name
         $ClassicRunAsAccountConnectionFieldValues = @{"SubscriptionName" = $SubscriptionName; "SubscriptionId" = $SubscriptionId; "CertificateAssetName" = $ClassicRunAsAccountCertifcateAssetName}
 
         # Create an Automation connection asset named AzureRunAsConnection in the Automation account. This connection uses the service principal.
-        CreateAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ClassicRunAsAccountConnectionAssetName $ClassicRunAsAccountConnectionTypeName $ClassicRunAsAccountConnectionFieldValues
+        New-AzureRmImgMgmtAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ClassicRunAsAccountConnectionAssetName $ClassicRunAsAccountConnectionTypeName $ClassicRunAsAccountConnectionFieldValues
 
         Write-Host -ForegroundColor red $UploadMessage
     }
@@ -1065,7 +1065,7 @@ function New-AzureRmImgMgmtAutomationAccount
     }
     
     Write-Verbose "Creating Run As account $applicationDisplayName" -Verbose
-    New-RunAsAccount -ResourceGroup $resourceGroupName `
+    New-AzureRmImgMgmtRunAsAccount -ResourceGroup $resourceGroupName `
        -AutomationAccountName $automationAccountName `
        -SubscriptionId $subscriptionId `
        -ApplicationDisplayName $applicationDisplayName `

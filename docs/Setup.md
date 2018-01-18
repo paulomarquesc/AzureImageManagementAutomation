@@ -13,6 +13,7 @@ This document provides all necessary steps to have a quick setup.
     * AzureRM.Resources 5.1.1 or greater
     * AzureRM.Storage 4.1.0 or greater
     * Azure.Storage 4.0.2 or greater
+    * AzureRm.Automation 4.0.0 or greater (needed only during setup)
     * AzureRmStorageQueue 1.0.0.4 or greater
     * AzureRmStorageTable 1.0.0.21 or greater
     * AzureRmImageManagement 1.0.0.25 or greater
@@ -27,10 +28,11 @@ The User executing the setup process must have owner role assigned at subscripti
 
 ```powershell
 Install-Module AzureRm.Storage
-Install-Module AzureRM.Profile
-Install-Module AzureRM.Resources
+Install-Module AzureRm.Profile
+Install-Module AzureRm.Resources
 Install-Module Azure.Storage
-install-Module AzureAD
+Install-Module AzureAD
+Install-Module AzureRm.Automation
 Install-Module AzureRmStorageTable
 Install-Module AzureRmStorageQueue
 Install-Module AzureRmImageManagement

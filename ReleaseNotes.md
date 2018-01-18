@@ -3,6 +3,8 @@
 
 ### Release 1/17/2018
 * Created an internal function in order to wait for the PS jobs for completion and reduce the amount of code in the setup.ps1 file.
+* Renamed some of the module functions to be more in accordance with PowerShell cmdlet standards
+* Included a missing requirement on setup guide
 
 ### Release 1/11/2017
 * Implemented the same parallel execution applied to the Automation Accounts for tier 2 storage account configuration.
@@ -68,11 +70,11 @@
 * Replaced dependency on MSOnline to AzureAD module 
 * Adding erroraction=stop to runbooks and improved an error message on new-imagemanagementimage and start-imagemanagementtier2distribution
 * Implemented a capability of this script to change the setup file directly
-* Commented line that contains $GetServicePrincipal on script New-RunAsAccount.ps1 because it is unecessary
+* Commented line that contains $GetServicePrincipal on script New-AzureRmImgMgmtRunAsAccount.ps1 because it is unecessary
 * Included #region statements on setup.ps1 script to unclutter it
 
 ### Release 10/31/2017
-* New-RunAsAccount changed to don't require elevated privileges
+* New-AzureRmImgMgmtRunAsAccount changed to don't require elevated privileges
 * Included code in setup.ps1 script to add the log configuration information to the configuration table
 * Setup.ps1 script now checks if the storage account was already created by looking at the "id" attribute of each storage account in the setupinfo.json file.
 * Created an auxiliary script called GenerateTier2StorageJson.ps1 that automatically generates the json section for the tier 2 storage accounts for a subscription and regions
