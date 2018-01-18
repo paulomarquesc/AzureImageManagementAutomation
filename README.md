@@ -6,6 +6,6 @@ Please, use the following documents to get started:
 
 [Setup](docs/Setup.md)
 
-[Operations Guide](docs/OperationsGuide.md])
+[Operations Guide](docs/OperationsGuide.md)
 
 For detailed more detailed information, please refer to https://blogs.technet.microsoft.com/paulomarques/2017/08/13/new-azure-automation-solution-azure-image-management-automation/.
