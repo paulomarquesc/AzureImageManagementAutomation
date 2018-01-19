@@ -41,15 +41,16 @@ Install-Module AzureRmImageManagement
 
 2. Download the solution from GitHub (https://github.com/paulomarquesc/AzureImageManagementAutomation/archive/master.zip)
 
-3. The ZIP file will be named AzureImageManagementAutomation-master.zip, right-click this file, click properties and make sure you click unblock checkbox
+3. The ZIP file will be named **AzureImageManagementAutomation-master.zip**, right-click this file, click properties and make sure you click unblock checkbox
 
-4.  Extract the content to the root of C: drive (if you extract to the default name it would be `<your folder>`\ AzureImageManagementAutomation-master\AzureImageManagementAutomation-master). Remove the -master and make sure that the following folder strucutre matches what you have
+4.  Extract the content to the root of C: drive (if you extract to the default folder it would end up being `<your folder>`\ AzureImageManagementAutomation-master\AzureImageManagementAutomation-master). If that's the case, remove the -master of both levels and make sure thatyou to move the content of the second level to the first folder level, your folder structure would look like this:
 ```
 <your folder>\AzureImageManagementAutomation\Setup
 <your folder>\AzureImageManagementAutomation\Modules
 <your folder>\AzureImageManagementAutomation\Runbooks
 
-E.g.
+Example
+
 C:\AzureImageManagementAutomation\Setup
 C:\AzureImageManagementAutomation\Modules
 C:\AzureImageManagementAutomation\Runbooks
@@ -58,7 +59,9 @@ C:\AzureImageManagementAutomation\Runbooks
 
 5. Open the SetupInfo.Json file that is located at `<your folder>\AzureImageManagementAutomation\Setup` and edit the following attributes:
 
-    Note that the detailed description of all attributes and sections are located at https://blogs.technet.microsoft.com/paulomarques/2017/08/13/new-azure-automation-solution-azure-image-management-automation/ 
+    >**NOTE:**
+    >Detailed description of all attributes and sections are located at https://blogs.technet.microsoft.com/paulomarques/2017/08/13/new-azure-automation-solution-azure-image-management-automation/ 
+    ---
 
     * general.tenantName
     * general.imagesResourceGroup
