@@ -417,22 +417,30 @@ function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Ce
     $Application = New-AzureRmADApplication -DisplayName $ApplicationDisplayName -HomePage ("http://" + $applicationDisplayName) -IdentifierUris ("http://" + $KeyId) -KeyCredentials $KeyCredential
     $ServicePrincipal = New-AzureRMADServicePrincipal -ApplicationId $Application.ApplicationId
 
-    Start-Sleep -s 300
+    # Waiting for the Service Principal to show up in Azure AD
     $GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
+
+    $Retries = 0;
+    While ($GetServicePrincipal -eq $null -and $Retries -le 16)
+    {
+        Start-Sleep -s 60
+        $GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
+        $Retries++
+    }
 
     if ($GetServicePrincipal -eq $null)
     {
-    throw "An error ocurred getting the service principal associated to application id $($ServicePrincipal.Id)."
+        throw "An error ocurred getting the service principal associated to application id $($ServicePrincipal.Id)."
     }
 
     $NewRole = New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
     $Retries = 0;
     While ($NewRole -eq $null -and $Retries -le 6)
     {
-    Start-Sleep -s 20
-    New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
-    $NewRole = Get-AzureRMRoleAssignment -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
-    $Retries++;
+        Start-Sleep -s 20
+        New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
+        $NewRole = Get-AzureRMRoleAssignment -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
+        $Retries++;
     }
 
     return $Application.ApplicationId.ToString();
