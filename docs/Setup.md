@@ -6,14 +6,15 @@ This document provides all necessary steps to have a quick setup.
 
 ### Software
 
-1. PowerShell 5 or greater
+1. PowerShell 5.0 or greater
+
 2. Following Azure PowerShell modules
     * AzureAD 2.0.0.131 or greater
     * AzureRM.Profile 4.1.1 or greater
     * AzureRM.Resources 5.1.1 or greater
     * AzureRM.Storage 4.1.0 or greater
     * Azure.Storage 4.0.2 or greater
-    * AzureRm.Automation 4.0.0 or greater (needed only during setup)
+    * AzureRm.Automation 4.0.0 or greater
     * AzureRmStorageQueue 1.0.0.4 or greater
     * AzureRmStorageTable 1.0.0.21 or greater
     * AzureRmImageManagement 1.0.0.25 or greater
