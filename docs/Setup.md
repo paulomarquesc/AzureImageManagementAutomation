@@ -10,14 +10,17 @@ This document provides all necessary steps to have a quick setup.
 
 2. Following Azure PowerShell modules
     * AzureAD 2.0.0.131 or greater
-    * AzureRM.Profile 4.1.1 or greater
-    * AzureRM.Resources 5.1.1 or greater
-    * AzureRM.Storage 4.1.0 or greater
+    * AzureRm.Profile 4.1.1 or greater
+    * AzureRm.Resources 5.1.1 or greater
+    * AzureRm.Storage 4.1.0 or greater
     * Azure.Storage 4.0.2 or greater
     * AzureRm.Automation 4.0.0 or greater
+    * AzureRm.Compute 4.1.1 or greater
     * AzureRmStorageQueue 1.0.0.4 or greater
     * AzureRmStorageTable 1.0.0.21 or greater
     * AzureRmImageManagement 1.0.0.25 or greater
+
+    Note: If you install the full AzureRm module, above modules will get installed with exception of AzureRmStorageQueue, AzureRmStorageTable and AzureRmImageManagement.
 
 ### Subscription requirements
 
