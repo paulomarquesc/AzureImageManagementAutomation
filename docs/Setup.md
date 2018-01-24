@@ -31,12 +31,13 @@ The User executing the setup process must have owner role assigned at subscripti
 1. Install Required PowerShell modules:
 
 ```powershell
+Install-Module AzureAD
+Install-Module Azure.Storage
 Install-Module AzureRm.Storage
 Install-Module AzureRm.Profile
 Install-Module AzureRm.Resources
-Install-Module Azure.Storage
-Install-Module AzureAD
 Install-Module AzureRm.Automation
+Install-Module AzureRm.Compute
 Install-Module AzureRmStorageTable
 Install-Module AzureRmStorageQueue
 Install-Module AzureRmImageManagement
