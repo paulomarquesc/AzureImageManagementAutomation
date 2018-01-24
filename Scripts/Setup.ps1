@@ -58,7 +58,7 @@ param
     Add-AzureRmAccount -Credential $cred
     Select-AzureRmSubscription -SubscriptionId $SubscriptionId
 
-    New-AzureRmStorageAccount -ResourceGroupName $storageAccountResourceGroup -Name $storageAccountName -SkuName Standard_LRS -Location $location -Kind BlobStorage -AccessTier Cool
+    New-AzureRmStorageAccount -ResourceGroupName $storageAccountResourceGroup -Name $storageAccountName -SkuName Standard_LRS -Location $location -Kind Storage
 }
 
 # ScriptBlock that invokes the Automation Account creation
