@@ -18,6 +18,8 @@
         Tier 0 subscription Id, this is the subscription that contains all runbooks, config storage account and receives the VHD upload from on-premises. 
     .PARAMETER connectionName
         RunAs account to be used. 
+    .PARAMETER IgnoreSchedule
+        Boolean value that allows distribution and image creation to happen as soon as possible, ignoring the runbook schedules. 
     .EXAMPLE
 #>
 using module AzureRmImageManagement
@@ -46,7 +48,10 @@ Param
     $connectionName="AzureRunAsConnection",
 
     [Parameter(Mandatory=$true)]
-    $jobId
+    $jobId,
+
+    [Parameter(Mandatory=$false)]
+    [boolean]$IgnoreSchedule=$false
 )
 
 $ErrorActionPreference = "Stop"
@@ -225,6 +230,48 @@ while ($pendingCopies.count -gt 0)
     }
     Start-Sleep $StatusCheckInterval
     $passCount++
+}
+
+# Check if ignore schedule is set and start tier 2 distribution if true
+if ($IgnoreSchedule)
+{
+    $mainAutomationAccount = Get-AzureRmImgMgmtAutomationAccount -table $configurationTable -AutomationAccountType "main"
+
+    $msg = "Ignore Schedule is set to TRUE, starting Start-ImageManagementTier2Distribution.ps1 immediately"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+    $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
+                "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;
+                "ConfigStorageAccountName"=$ConfigStorageAccountName;
+                "ConfigurationTableName"=$ConfigurationTableName;
+                "IgnoreSchedule"=$IgnoreSchedule}
+    
+    $msg = "Starting tier2 distribution. Runbook Start-ImageManagementTier2Distribution.ps1"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+    $msg = $params | convertTo-json -Compress
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+            
+    try
+    {
+        Start-AzureRmAutomationRunbook  -Name "Start-ImageManagementTier2Distribution" `
+                                               -Parameters $params `
+                                               -AutomationAccountName $mainAutomationAccount.automationAccountName `
+                                               -ResourceGroupName $mainAutomationAccount.resourceGroupName
+        
+        $msg = "Tier2 distribution started"
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    }
+    catch
+    {
+        $msg = "Tier2 distribution failed, execution of runbook Start-ImageManagementTier2Distribution failed."
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+    
+        $msg = "Error Details: $_"
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+    
+        throw $_
+    }
 }
 
 $msg = "Tier 1 VHD copy process concluded" 

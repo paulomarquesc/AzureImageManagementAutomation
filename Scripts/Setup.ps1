@@ -473,7 +473,7 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
                                                                             $true, `
                                                                             $scriptPath
         
-        $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$copyAutomationAccountName;"type"="copyDedicated"}
+        $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$copyAutomationAccountName;"type"="copyDedicated";"maxJobsCount"=(Get-ConfigValue $config.automationAccount.maxDedicatedCopyJobs $config)}
     }
 }
 
@@ -509,7 +509,7 @@ for ($i=1;$i -le (Get-ConfigValue $config.automationAccount.workerAutomationAcco
                                                                              $true, `
                                                                              $scriptPath
 
-        $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$imgAutomationAccountName;"type"="ImageCreationDedicated"}
+        $automationAccountsCheckList += New-Object -TypeName PSObject -Property @{"name"=$imgAutomationAccountName;"type"="ImageCreationDedicated";"maxJobsCount"=(Get-ConfigValue $config.automationAccount.maxDedicatedImageCreationJobs $config)}
     }
 }
 
@@ -539,15 +539,20 @@ foreach ($automationAccount in $automationAccountsCheckList)
         if ($configQueryResult -eq $null)
         {
             # Adding the automation account info in the configuration table
-            [hashtable]$mainAutomationAccountProps = @{ "automationAccountName"=$automationAccount.name;
+            [hashtable]$automationAccountProps = @{ "automationAccountName"=$automationAccount.name;
                                                         "resourceGroupName"=Get-ConfigValue $config.automationAccount.resourceGroup $config;
                                                         "subscriptionId"=Get-ConfigValue $config.automationAccount.subscriptionId $config;
                                                         "applicationDisplayName"=Get-ConfigValue $config.automationAccount.applicationDisplayNamePrefix $config;
                                                         "type"=$automationAccount.type;
                                                         "location"=Get-ConfigValue $config.automationAccount.location $config;
                                                         "connectionName"=Get-ConfigValue $config.automationAccount.connectionName $config}
+
+            if (($automationAccount.type -eq "copyDedicated") -or ($automationAccount.type -eq "ImageCreationDedicated"))
+            {
+                $automationAccountProps["maxJobsCount"]=$automationAccount.maxJobsCount
+            }
     
-            Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $mainAutomationAccountProps    
+            Add-AzureStorageTableRow -table $configurationTable -partitionKey "automationAccount" -rowKey ([guid]::NewGuid().guid) -property $automationAccountProps    
         }
     }
     else

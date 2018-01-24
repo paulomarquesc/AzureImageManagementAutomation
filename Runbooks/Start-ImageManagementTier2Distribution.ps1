@@ -13,7 +13,9 @@
     .PARAMETER Tier0SubscriptionId
         Tier 0 subscription Id, this is the subscription that contains all runbooks, config storage account and receives the VHD upload from on-premises. 
     .PARAMETER connectionName
-        RunAs account to be used. 
+        RunAs account to be used.
+    .PARAMETER IgnoreSchedule
+        Boolean value that allows distribution and image creation to happen as soon as possible, ignoring the runbook schedules.
 
     .EXAMPLE
 #>
@@ -34,7 +36,10 @@ Param
     [string] $Tier0SubscriptionId,
 
     [Parameter(Mandatory=$false)]
-    $connectionName="AzureRunAsConnection"
+    $connectionName="AzureRunAsConnection",
+
+    [Parameter(Mandatory=$false)]
+    [boolean]$IgnoreSchedule=$false
 )
 
 $ErrorActionPreference = "Stop"
@@ -233,7 +238,8 @@ while ($vhdToProcess -ne $null)
                         "ConfigurationTableName"=$ConfigurationTableName;
                         "AutomationAccountName"=$automationAccount.automationAccountName;
                         "Tier0SubscriptionId"=$tier0SubscriptionId;
-                        "jobId"=$jobId}
+                        "jobId"=$jobId;
+                        "IgnoreSchedule"=$IgnoreSchedule}
             
             $msg = "Data being passed to Start-ImageManagementVhdCopyTier2 runbook:"
             Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

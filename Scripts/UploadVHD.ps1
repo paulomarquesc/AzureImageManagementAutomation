@@ -33,6 +33,8 @@
     .PARAMETER vhdName
         When getting the source VHD from the managed disk, there is no VHD name, it defaults to abc, this parameter gives the name of the blob that will be copied to
         the tier 0 storage account to start the VHD distribution.
+    .PARAMETER IgnoreSchedule
+        Switch that allows distribution and image creation to happen as soon as possible, ignoring the runbook schedules. 
     
     .EXAMPLE
         # Using local VHD
@@ -43,9 +45,9 @@
             -ImageName $imgName `
             -VhdFullPath "c:\temp\Test2016-Img01.vhd" `
             -OsType "Windows"
-
+    
     .EXAMPLE
-        # Using managed disk SAS Token based URI
+         # Using managed disk SAS Token based URI
         .\UploadVHD.ps1 -description "test submission 02" `
             -Tier0SubscriptionId $Tier0SubscriptionId `
             -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
@@ -55,6 +57,19 @@
             -sourceAzureRmDiskResourceGroup "test" `
             -vhdName "centos-golden-image.vhd" `
             -OsType "Linux"
+
+    .EXAMPLE
+        # Using managed disk SAS Token based URI with immidiate distribution
+        .\UploadVHD.ps1 -description "test submission 02" `
+            -Tier0SubscriptionId $Tier0SubscriptionId `
+            -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName `
+            -ConfigStorageAccountName $ConfigStorageAccountName `
+            -ImageName $imgName `
+            -sourceAzureRmDiskName "centos01_OsDisk_1_28e8cc4091d142ebb3a820a0c703e811" `
+            -sourceAzureRmDiskResourceGroup "test" `
+            -vhdName "centos-golden-image.vhd" `
+            -OsType "Linux" `
+            -IgnoreSchedule
     
 #>
 using module AzureRmImageManagement
@@ -103,7 +118,10 @@ Param
 
     [Parameter(Mandatory=$true)]
     [ValidateSet("Windows","Linux")]
-    [string]$OsType
+    [string]$OsType,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$IgnoreSchedule
 )
 
 Import-Module AzureRmStorageTable
@@ -327,7 +345,8 @@ $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
             "VhdName"=$vhdName;
             "ConfigurationTableName"=$ConfigurationTableName;
             "StatusCheckInterval"=60;
-            "jobId"=$jobId}
+            "jobId"=$jobId;
+            "ignoreSchedule"=$IgnoreSchedule.IsPresent}
 
 $msg = "Starting tier1 distribution. Runbook Start-ImageManagementTier1Distribution with parameters on next log line:"
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

@@ -934,9 +934,41 @@ function Get-AzureRmImgMgmtAvailableAutomationAccount
         $attempts++
     }
 
-    throw "Could not find any automation account of type $(AutomationAccountType) available at this time. If this error is becoming regular, it means it is time to increase the number of worker automation accounts."
+    throw "Could not find any automation account of type $AutomationAccountType available at this time. If this error is becoming regular, it means it is time to increase the number of worker automation accounts."
 
 }
+
+function Get-AzureRmImgMgmtAutomationAccount
+{
+	param
+	(
+		[Parameter(Mandatory=$true)]
+		$table,
+
+        [Parameter(Mandatory=$true)]
+        [string]$AutomationAccountType,
+
+        [Parameter(Mandatory=$false)]
+        [string]$AutomationAccountName
+    )
+
+    $customFilter = "(PartitionKey eq 'automationAccount') and (type eq `'" + $AutomationAccountType + "`')" 
+
+    if (-not ([string]::IsNullOrEmpty($AutomationAccountName)))
+    {
+        $customFilter += " and (automationAccountName eq `'" + $AutomationAccountName + "`')"
+    }
+
+    $result = Get-AzureStorageTableRowByCustomFilter -customFilter $customFilter -table $table
+
+    if ($result -eq $null)
+    {
+        throw "Could not find any automation account using filter $customFilter"   
+    }
+
+    return $result
+}
+
 
 function Update-AzureRmImgMgmtAutomationAccountAvailabilityCount
 {

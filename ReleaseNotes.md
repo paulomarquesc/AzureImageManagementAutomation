@@ -1,6 +1,10 @@
 
 # Release Notes
 
+### Release 1/24/2018
+* Implementation of a feature to ignore runbook schedules and perform the VHD distribution and image creation as quick as possible
+* Fixed a setup.ps1 issue where the attribute of maxJobsCount was not being added to the automation accounts, leading to an automation account not being able to be selected for tier 2 VHD distribution or image creation processes 
+
 ### Release 1/17/2018
 * Created an internal function in order to wait for the PS jobs for completion and reduce the amount of code in the setup.ps1 file.
 * Renamed some of the module functions to be more in accordance with PowerShell cmdlet standards

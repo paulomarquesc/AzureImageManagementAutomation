@@ -28,6 +28,8 @@
         Id of the tier 0 subscription (the one that contains the configuration table). 
     .PARAMETER jobId
         Id of this copy job
+    .PARAMETER IgnoreSchedule
+        Boolean value that allows distribution and image creation to happen as soon as possible, ignoring the runbook schedules.
 
     .EXAMPLE
 #>
@@ -69,7 +71,10 @@ Param
     [String] $Tier0SubscriptionId,
 
     [Parameter(Mandatory=$true)]
-    [String] $jobId
+    [String] $jobId,
+
+    [Parameter(Mandatory=$false)]
+    [boolean]$IgnoreSchedule=$false
 )
 
 $ErrorActionPreference = "Stop"
@@ -239,6 +244,50 @@ catch
 
     throw $_
 }
+
+# Check if ignore schedule is set, if true, check if tier 2 distribution is completed, then start image creation
+if ($IgnoreSchedule)
+{
+    $msg = "Ignore Schedule is set to TRUE, checking if tier 2 distribution is completed"
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        
+    $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $job
+
+    if (($status.Tier2CopyCompletion -eq 100) -and ($status.ErrorCount -eq 0))
+    {
+        $mainAutomationAccount = Get-AzureRmImgMgmtAutomationAccount -table $configurationTable -AutomationAccountType "main"
+
+        $msg = "Tier 2 is completed, starting image creation process immediately, ignoring runbook schedule"
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        
+        $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
+                    "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;
+                    "ConfigStorageAccountName"=$ConfigStorageAccountName;
+                    "ConfigurationTableName"=$ConfigurationTableName}
+            
+        try
+        {
+            Start-AzureRmAutomationRunbook  -Name "Start-ImageManagementImageCreation" `
+                                                -Parameters $params `
+                                                -AutomationAccountName $mainAutomationAccount.automationAccountName `
+                                                -ResourceGroupName $mainAutomationAccount.resourceGroupName
+
+            $msg = "Start-ImageManagementImageCreation started"
+            Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        }
+        catch
+        {
+            $msg = "Immediate image creation failed, execution of runbook Start-ImageManagementImageCreation failed."
+            Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+
+            $msg = "Error Details: $_"
+            Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+            throw $_
+        }
+    }
+}
+
 
 $msg = "$module execution completed" 
 Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
