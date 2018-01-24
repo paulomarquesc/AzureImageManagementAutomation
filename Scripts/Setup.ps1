@@ -30,7 +30,7 @@
     1) The user executing this setup script must be owner of all involved subscriptions.
 #>
 
-#Requires -Modules AzureAD, AzureRmImageManagement
+#Requires -Modules AzureAD, AzureRmImageManagement, AzureRm.Compute
 
 param
 (
