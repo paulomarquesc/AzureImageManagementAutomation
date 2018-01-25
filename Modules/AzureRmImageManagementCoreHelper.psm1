@@ -414,7 +414,21 @@ function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Ce
     $KeyCredential.CertValue  = $keyValue
 
     # Use key credentials and create an Azure AD application
-    $Application = New-AzureRmADApplication -DisplayName $ApplicationDisplayName -HomePage ("http://" + $applicationDisplayName) -IdentifierUris ("http://" + $KeyId) -KeyCredentials $KeyCredential
+    New-AzureRmADApplication -DisplayName $ApplicationDisplayName -HomePage ("http://" + $applicationDisplayName) -IdentifierUris ("http://" + $KeyId) -KeyCredentials $KeyCredential | out-null
+
+    $Retries = 0;
+    While ($Application -eq $null -and $Retries -le 16)
+    {
+        Start-Sleep -s 60
+        $Application = Get-AzureRmADApplication -IdentifierUri "http://$KeyId"
+        $Retries++
+    }
+
+    if ($Application -eq $null)
+    {
+        throw "An error ocurred getting application $ApplicationDisplayName."
+    }
+
     $ServicePrincipal = New-AzureRMADServicePrincipal -ApplicationId $Application.ApplicationId
 
     # Waiting for the Service Principal to show up in Azure AD
@@ -432,13 +446,13 @@ function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Ce
     {
         throw "An error ocurred getting the service principal associated to application id $($ServicePrincipal.Id)."
     }
-
+    
     $NewRole = New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
     $Retries = 0;
-    While ($NewRole -eq $null -and $Retries -le 6)
+    While ($NewRole -eq $null -and $Retries -le 16)
     {
-        Start-Sleep -s 20
-        New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
+        Start-Sleep -s 60
+        New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue | out-null
         $NewRole = Get-AzureRMRoleAssignment -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
         $Retries++;
     }
@@ -695,7 +709,7 @@ function New-AzureRmImgMgmtRunAsAccount
 
     # Create a service principal
     $PfxCert = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @($PfxCertPathForRunAsAccount, $PfxCertPlainPasswordForRunAsAccount)
-    $ApplicationId=New-AzureRmImgMgmtServicePrincipal $PfxCert $ApplicationDisplayName
+    $ApplicationId = New-AzureRmImgMgmtServicePrincipal $PfxCert $ApplicationDisplayName
 
     # Create the Automation certificate asset
     New-AzureRmImgMgmtAutomationCertificateAsset $ResourceGroup $AutomationAccountName $CertifcateAssetName $PfxCertPathForRunAsAccount $PfxCertPlainPasswordForRunAsAccount $true
@@ -704,49 +718,14 @@ function New-AzureRmImgMgmtRunAsAccount
     $SubscriptionInfo = Get-AzureRmSubscription -SubscriptionId $SubscriptionId
     $TenantID = $SubscriptionInfo | Select TenantId -First 1
     $Thumbprint = $PfxCert.Thumbprint
-    $ConnectionFieldValues = @{"ApplicationId" = $ApplicationId; "TenantId" = $TenantID.TenantId; "CertificateThumbprint" = $Thumbprint; "SubscriptionId" = $SubscriptionId}
+    $ConnectionFieldValues = @{"ApplicationId" = ($ApplicationId.ToString()); "TenantId" = $TenantID.TenantId; "CertificateThumbprint" = $Thumbprint; "SubscriptionId" = $SubscriptionId}
+
+    $app = Get-AzureRmADApplication -ApplicationId ($ApplicationId.ToString())
+
+    $svcPrincipal = Get-AzureRmADServicePrincipal -ServicePrincipalName ($ApplicationId.ToString())
 
     # Create an Automation connection asset named AzureRunAsConnection in the Automation account. This connection uses the service principal.
     New-AzureRmImgMgmtAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ConnectionAssetName $ConnectionTypeName $ConnectionFieldValues
-
-    if ($CreateClassicRunAsAccount)
-    {
-        # Create a Run As account by using a service principal
-        $ClassicRunAsAccountCertifcateAssetName = "AzureClassicRunAsCertificate"
-        $ClassicRunAsAccountConnectionAssetName = "AzureClassicRunAsConnection"
-        $ClassicRunAsAccountConnectionTypeName = "AzureClassicCertificate "
-        $UploadMessage = "Please upload the .cer format of #CERT# to the Management store by following the steps below." + [Environment]::NewLine +
-                "Log in to the Microsoft Azure Management portal (https://manage.windowsazure.com) and select Settings -> Management Certificates." + [Environment]::NewLine +
-                "Then click Upload and upload the .cer format of #CERT#"
-
-        if ($EnterpriseCertPathForClassicRunAsAccount -and $EnterpriseCertPlainPasswordForClassicRunAsAccount )
-        {
-            $PfxCertPathForClassicRunAsAccount = $EnterpriseCertPathForClassicRunAsAccount
-            $PfxCertPlainPasswordForClassicRunAsAccount = $EnterpriseCertPlainPasswordForClassicRunAsAccount
-            $UploadMessage = $UploadMessage.Replace("#CERT#", $PfxCertPathForClassicRunAsAccount)
-        }
-        else
-        {
-            $ClassicRunAsAccountCertificateName = $AutomationAccountName+$ClassicRunAsAccountCertifcateAssetName
-            $PfxCertPathForClassicRunAsAccount = Join-Path $env:TEMP ($ClassicRunAsAccountCertificateName + ".pfx")
-            $PfxCertPlainPasswordForClassicRunAsAccount = $SelfSignedCertPlainPassword
-            $CerCertPathForClassicRunAsAccount = Join-Path $env:TEMP ($ClassicRunAsAccountCertificateName + ".cer")
-            $UploadMessage = $UploadMessage.Replace("#CERT#", $CerCertPathForClassicRunAsAccount)
-            New-AzureRmImgMgmtSelfSignedCertificate $KeyVaultName $ClassicRunAsAccountCertificateName $PfxCertPlainPasswordForClassicRunAsAccount $PfxCertPathForClassicRunAsAccount $CerCertPathForClassicRunAsAccount $SelfSignedCertNoOfMonthsUntilExpired
-        }
-
-        # Create the Automation certificate asset
-        New-AzureRmImgMgmtAutomationCertificateAsset $ResourceGroup $AutomationAccountName $ClassicRunAsAccountCertifcateAssetName $PfxCertPathForClassicRunAsAccount $PfxCertPlainPasswordForClassicRunAsAccount $false
-
-        # Populate the ConnectionFieldValues
-        $SubscriptionName = $subscription.Subscription.Name
-        $ClassicRunAsAccountConnectionFieldValues = @{"SubscriptionName" = $SubscriptionName; "SubscriptionId" = $SubscriptionId; "CertificateAssetName" = $ClassicRunAsAccountCertifcateAssetName}
-
-        # Create an Automation connection asset named AzureRunAsConnection in the Automation account. This connection uses the service principal.
-        New-AzureRmImgMgmtAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ClassicRunAsAccountConnectionAssetName $ClassicRunAsAccountConnectionTypeName $ClassicRunAsAccountConnectionFieldValues
-
-        Write-Host -ForegroundColor red $UploadMessage
-    }
 }
 
 function Wait-ModuleImport
