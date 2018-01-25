@@ -339,10 +339,15 @@ if ($mainAutomationAccount -eq $null)
 $msg = "Main Automation Account identified as $($mainAutomationAccount.automationAccountName) at resource group $($mainAutomationAccount.resourceGroupName)"
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
+$vhdMessage = @{ "vhdName"=$vhdName;
+                 "imageName"=$ImageName;
+                 "osType"=$osType;
+                 "jobId"=$jobId }
+
 $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
             "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;
             "ConfigStorageAccountName"=$ConfigStorageAccountName;
-            "VhdName"=$vhdName;
+            "vhdMessage"=$vhdMessage ;
             "ConfigurationTableName"=$ConfigurationTableName;
             "StatusCheckInterval"=60;
             "jobId"=$jobId;
@@ -375,29 +380,29 @@ catch
     throw $_
 }
 
-# Place message in the copy queue to start tier 2 distribution (VHD copy to each storage account per region/subscription)
-$queueInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable 
+# # Place message in the copy queue to start tier 2 distribution (VHD copy to each storage account per region/subscription)
+# $queueInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable 
 
-$copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccountResourceGroupName `
-                                          -storageAccountName  $queueInfo.storageAccountName `
-                                          -queueName $queueInfo.copyProcessQueueName
+# $copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccountResourceGroupName `
+#                                           -storageAccountName  $queueInfo.storageAccountName `
+#                                           -queueName $queueInfo.copyProcessQueueName
 
-$vhdMessage = @{ "vhdName"=$vhdName;
-                 "imageName"=$ImageName;
-                 "osType"=$osType;
-                 "jobId"=$jobId }
+# $vhdMessage = @{ "vhdName"=$vhdName;
+#                  "imageName"=$ImageName;
+#                  "osType"=$osType;
+#                  "jobId"=$jobId }
 
 # Creating job submission information
 $submissionDateUTC = (get-date -date ([datetime]::utcnow) -Format G)
 Add-AzureRmRmImgMgmtJob -logTable $log -jobId $jobId -description $Description -submissionDate $submissionDateUTC -status ([status]::InProgress) -vhdInfo ($vhdMessage | convertto-json -Compress) -jobsTable $jobsTable
 
-$msg = "Placing message in the queue for tier2 distribution process (VHD copy to each subscription and related regions)."
-Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+# $msg = "Placing message in the queue for tier2 distribution process (VHD copy to each subscription and related regions)."
+# Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
 
-$msg = $vhdMessage | convertTo-json -Compress
-Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::copyProcessMessage) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+# $msg = $vhdMessage | convertTo-json -Compress
+# Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::copyProcessMessage) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
                  
-Add-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdMessage
+# Add-AzureRmStorageQueueMessage -queue $copyQueue -message $vhdMessage
 
 $msg = "Upload script execution completed."
 Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::upload) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)

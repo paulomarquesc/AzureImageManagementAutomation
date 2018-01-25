@@ -10,8 +10,8 @@
         Name of the Storage Account that contains the system configuration tables
     .PARAMETER ConfigurationTableName
         Name of the configuration table, default to imagemanagementconfiguration, which is the preferred name.
-    .PARAMETER VhdName
-        Name of the VHD to be uploaded to the tier 1 storage accounts
+    .PARAMETER VhdMessage
+        Message to be placed in the queue that contains information about the VHD
     .PARAMETER StatusCheckInterval
         Time in minutes where that the blob copy jobs are pulled for status, default is 60 minutes. 
     .PARAMETER Tier0SubscriptionId
@@ -33,7 +33,7 @@ Param
     [String] $ConfigStorageAccountName,
 
     [Parameter(Mandatory=$true)]
-    [String] $VhdName,
+    $vhdMessage,
 
     [Parameter(Mandatory=$false)]
     [String] $ConfigurationTableName="ImageManagementConfiguration",
@@ -145,21 +145,21 @@ Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1
 
 $pendingCopies = New-Object System.Collections.Generic.List[System.String]
 
-$sourceVhdName = $vhdName
+$sourceVhdName = $vhdMessage.vhdName
 
 for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
 {
-    $destBlobName = [string]::Format("{0}-tier1-{1}",$VhdName,$i.ToString("000"))
+    $destBlobName = [string]::Format("{0}-tier1-{1}",$vhdMessage.vhdName,$i.ToString("000"))
 
     # getting the previous blob as source or a random number after 10 blobs
     if (($i -gt 0) -and ($i -le 10))
     {
-        $sourceVhdName = [string]::Format("{0}-tier1-{1}",$VhdName,($i-1).ToString("000"))
+        $sourceVhdName = [string]::Format("{0}-tier1-{1}",$vhdMessage.vhdName,($i-1).ToString("000"))
     }
     elseif ($i -gt 10)
     {
         $rnd = Get-Random -Minimum 0 -Maximum $i
-        $sourceVhdName = [string]::Format("{0}-tier1-{1}",$VhdName,($rnd).ToString("000"))
+        $sourceVhdName = [string]::Format("{0}-tier1-{1}",$vhdMessage.vhdName,($rnd).ToString("000"))
     }
 
     try
@@ -199,7 +199,7 @@ while ($pendingCopies.count -gt 0)
        
     for ($i=0;$i -lt $tier0StorageAccount.tier1Copies;$i++)
     {
-        $destBlobName = [string]::Format("{0}-tier1-{1}",$VhdName,$i.ToString("000"))
+        $destBlobName = [string]::Format("{0}-tier1-{1}",$vhdMessage.vhdName,$i.ToString("000"))
         if ($pendingCopies.Contains($destBlobName))
         {
             try
@@ -230,6 +230,39 @@ while ($pendingCopies.count -gt 0)
     }
     Start-Sleep $StatusCheckInterval
     $passCount++
+}
+
+try
+{
+    # Place message in the copy queue to start tier 2 distribution (VHD copy to each storage account per region/subscription)
+    $queueInfo = Get-AzureStorageTableRowByCustomFilter -customFilter "(PartitionKey eq 'queueConfig')" -table $configurationTable 
+
+    $copyQueue = Get-AzureRmStorageQueueQueue -resourceGroup $queueInfo.storageAccountResourceGroupName `
+                                            -storageAccountName  $queueInfo.storageAccountName `
+                                            -queueName $queueInfo.copyProcessQueueName
+
+    $msg = "Placing message in the queue for tier2 distribution process (VHD copy to each subscription and related regions)."
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
+    $msg = $vhdMessage | convertTo-json -Compress
+    Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::copyProcessMessage) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+    
+    $newVhdMessage = @{"vhdName"=$vhdMessage.vhdName;
+                        "imageName"=$vhdMessage.ImageName;
+                        "osType"=$vhdMessage.osType;
+                        "jobId"=$vhdMessage.jobId }
+
+    Add-AzureRmStorageQueueMessage -queue $copyQueue -message $newVhdMessage
+}
+catch
+{
+    $msg = "An error occurred adding the tier 2 copy message in the queue."
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error) 
+
+    $msg = "Error Details: $_"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier1Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
+
+    throw $_
 }
 
 # Check if ignore schedule is set and start tier 2 distribution if true

@@ -131,7 +131,9 @@ Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2
 try
 {
     $sourceContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $SourceStorageAccount.resourceGroupName  `
-                                                    -StorageAccountName $SourceStorageAccount.storageAccountName
+                                                    -StorageAccountName $SourceStorageAccount.storageAccountName `
+                                                    -retry 60 `
+                                                    -retryWaitSeconds 60 
 }
 catch
 {
@@ -160,7 +162,9 @@ catch
 try
 {
     $destContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $DestinationStorageAccount.resourceGroupName `
-                                                    -StorageAccountName $DestinationStorageAccount.storageAccountName
+                                                    -StorageAccountName $DestinationStorageAccount.storageAccountName `
+                                                    -retry 60 `
+                                                    -retryWaitSeconds 60 
 }
 catch
 {
@@ -251,7 +255,7 @@ if ($IgnoreSchedule)
     $msg = "Ignore Schedule is set to TRUE, checking if tier 2 distribution is completed"
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
         
-    $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $job
+    $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $jobId
 
     if (($status.Tier2CopyCompletion -eq 100) -and ($status.ErrorCount -eq 0))
     {

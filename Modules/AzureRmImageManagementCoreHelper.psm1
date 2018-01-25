@@ -1588,8 +1588,8 @@ function Get-AzureRmImgMgmtStorageContext
     (
         [string]$ResourceGroupName,
         [string]$StorageAccountName,
-        [int]$retry = 30,
-        [int]$retryWaitSeconds = 30
+        [int]$retry = 60,
+        [int]$retryWaitSeconds = 60
     )
 
     # Performing a loop to get the destination context with 5 attempts
@@ -1607,6 +1607,7 @@ function Get-AzureRmImgMgmtStorageContext
         
         if ($context -eq $null)
         {
+            Write-Verbose "Context is still null, retrying for storage account $storageAccountName at resource group $resourceGroupName, retry count: $retryCount" -Verbose
             Start-Sleep -Seconds $retryWaitSeconds
         }
         
@@ -1629,8 +1630,8 @@ function Get-AzureRmImgMgmtTable
         [string]$ResourceGroup,
         [string]$StorageAccountName,
         [string]$TableName,
-        [int]$retry = 10,
-        [int]$retryWaitSeconds = 30
+        [int]$retry = 60,
+        [int]$retryWaitSeconds = 60
     )
 
     # Performing a loop to get the table
