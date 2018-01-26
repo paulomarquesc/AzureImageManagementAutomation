@@ -144,12 +144,14 @@ catch
 }
 
 # Getting destination context
-$msg = "Getting source context object for tier 2 copy -> Subscription: $($SourceStorageAccount.SubscriptionId) SourceStorageAccount: $($SourceStorageAccount.storageAccountName) SourceStorageAccountResourceGroup $($SourceStorageAccount.resourceGroupName)"
-Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
 try
 {
+    $msg = "Selecting destination subscription $DestinationStorageAccount.SubscriptionId "
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
     Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId 
+
+    Start-sleep -s 10
 }
 catch
 {
@@ -161,6 +163,9 @@ catch
 
 try
 {
+    $msg = "Getting destination context object for tier 2 copy -> Subscription: $($DestinationStorageAccount.SubscriptionId) DestinationStorageAccount: $($DestinationStorageAccount.storageAccountName) DestinationStorageAccountResourceGroup $($DestinationStorageAccount.resourceGroupName)"
+    Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+
     $destContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $DestinationStorageAccount.resourceGroupName `
                                                     -StorageAccountName $DestinationStorageAccount.storageAccountName `
                                                     -retry 60 `
@@ -168,7 +173,7 @@ try
 }
 catch
 {
-    $msg = "An error occured getting the storage context.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
+    $msg = "An error occured getting the destination storage context.`nDetails of this copy process:$VhdDetails`nDestination Subscription: $($DestinationStorageAccount.SubscriptionId), Destination Storage Account: $($DestinationStorageAccount.storageAccountName), Dest. Storage Account RG: $($DestinationStorageAccount.resourceGroupName)`nError: $_"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Error)
 
     throw $msg
@@ -254,8 +259,15 @@ if ($IgnoreSchedule)
 {
     $msg = "Ignore Schedule is set to TRUE, checking if tier 2 distribution is completed"
     Add-AzureRmImgMgmtLog -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-        
-    $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $jobId
+    
+    $job = Get-AzureRmImgMgmtJob -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $ConfigStorageAccountName -JobId $jobId
+
+    if ($job -eq $null)
+    {
+        throw "Job ID $jobId not found"
+    }
+
+    $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $job[0]
 
     if (($status.Tier2CopyCompletion -eq 100) -and ($status.ErrorCount -eq 0))
     {
@@ -264,7 +276,7 @@ if ($IgnoreSchedule)
         $msg = "Tier 2 is completed, starting image creation process immediately, ignoring runbook schedule"
         Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
         
-        $params = @{"Tier0SubscriptionId"=$tier0StorageAccount.SubscriptionId;
+        $params = @{"Tier0SubscriptionId"=Tier0SubscriptionId;
                     "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;
                     "ConfigStorageAccountName"=$ConfigStorageAccountName;
                     "ConfigurationTableName"=$ConfigurationTableName}

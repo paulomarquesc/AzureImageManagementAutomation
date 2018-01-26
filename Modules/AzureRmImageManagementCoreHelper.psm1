@@ -1596,6 +1596,9 @@ function Get-AzureRmImgMgmtStorageContext
     $retryCount = 0
     while (($context -eq $null) -and ($retryCount -lt $retry))
     {
+        $armContext = Get-AzureRmContext
+        Write-Verbose "Azure RM Context: $($armContext | convertto-json -compress)" -verbose
+
         try
         {
             $context = (Get-AzureRmStorageAccount -ResourceGroupName $resourceGroupName -Name $storageAccountName).Context
@@ -1603,6 +1606,7 @@ function Get-AzureRmImgMgmtStorageContext
         catch
         { 
             # Avoiding temporary intermittence to make this fail
+            Write-Verbose "An Error Ocurred: $_" -Verbose
         }
         
         if ($context -eq $null)
