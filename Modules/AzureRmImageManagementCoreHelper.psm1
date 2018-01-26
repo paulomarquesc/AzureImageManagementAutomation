@@ -1586,10 +1586,20 @@ function Get-AzureRmImgMgmtStorageContext
 {
     param
     (
+        [Parameter(Mandatory=$true)]
         [string]$ResourceGroupName,
+
+        [Parameter(Mandatory=$true)]
         [string]$StorageAccountName,
+        
+        [Parameter(Mandatory=$false)]
         [int]$retry = 60,
-        [int]$retryWaitSeconds = 60
+        
+        [Parameter(Mandatory=$false)]
+        [int]$retryWaitSeconds = 60,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$subscriptionId
     )
 
     # Performing a loop to get the destination context with 5 attempts
@@ -1597,7 +1607,15 @@ function Get-AzureRmImgMgmtStorageContext
     while (($context -eq $null) -and ($retryCount -lt $retry))
     {
         $armContext = Get-AzureRmContext
-        Write-Verbose "Azure RM Context: $($armContext | convertto-json -compress)" -verbose
+        Write-Verbose "Azure RM Subscription: $($armContext.subscription.id)" -verbose
+
+        if (-not ([string]::IsnullOrEmpty($subscriptionId)))
+        {
+            if ($armContext.subscription.id -ne $subscriptionId)
+            {
+                Select-AzureRmSubscription -SubscriptionId $subscriptionId
+            }
+        }
 
         try
         {
@@ -1617,6 +1635,8 @@ function Get-AzureRmImgMgmtStorageContext
         
         $retryCount++
     }
+
+    Select-AzureRmSubscription -SubscriptionId $armContext.subscription.id
 
     if ($context -eq $null)
     {
