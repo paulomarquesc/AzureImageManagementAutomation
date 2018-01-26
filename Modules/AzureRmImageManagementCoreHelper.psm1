@@ -124,10 +124,10 @@ class ImageMgmtJobStatus : ImageMgmtJob
     }
 
     [bool] isCompleted() {
-       if ( ($this.uploadCompletion -eq 100) -and `
-            ($this.tier1CopyCompletion -eq 100) -and `
-            ($this.tier2CopyCompletion -eq 100) -and `
-            ($this.imageCreationCompletion -eq 100) -and `
+       if ( ($this.uploadCompletion -ge 100) -and `
+            ($this.tier1CopyCompletion -ge 100) -and `
+            ($this.tier2CopyCompletion -ge 100) -and `
+            ($this.imageCreationCompletion -ge 100) -and `
             ($this.errorCount -eq 0) )
         {
             return $true
@@ -1811,10 +1811,10 @@ function Get-AzureRmImgMgmtJobStatus
     Write-Progress -Activity "Getting Job Progress Status: Job Id: $($job.JobId)" -Status "Gathering error information from log table" -PercentComplete (($activityCount/$totalActivities)*100)
     $errorMessages = Get-AzureRmImgMgmtLog -ConfigurationTable $configurationTable -jobId $job.jobId  -Level Error
 
-    [int]$uploadCompletion =  ($uploadInfo.count/1) * 100
-    [int]$tier1CopyCompletion = ($tier1Info.count/$tier1Copies) * 100
-    [int]$tier2CopyCompletion = ($tier2Info.count/$tier2StorageAccountCt) * 100
-    [int]$imageCreationCompletion = ($imageInfo.count/$tier2StorageAccountCt) * 100
+    [int]$uploadCompletion =  if ((($uploadInfo.count/1) * 100) -ge 100) { 100 } else {($uploadInfo.count/1) * 100}
+    [int]$tier1CopyCompletion = if ((($tier1Info.count/$tier1Copies) * 100) -ge 100) { 100 } else {($tier1Info.count/$tier1Copies) * 100}
+    [int]$tier2CopyCompletion = if ((($tier2Info.count/$tier2StorageAccountCt) * 100 ) -ge 100) { 100 } else {($tier2Info.count/$tier2StorageAccountCt) * 100 }
+    [int]$imageCreationCompletion = if ((($imageInfo.count/$tier2StorageAccountCt) * 100 ) -ge 100) { 100 } else {($imageInfo.count/$tier2StorageAccountCt) * 100 }
 
     $result = [ImageMgmtJobStatus]::New($job.jobId, $job.SubmissionDate, $job.Description, $job.VhdName, $job.ImageName, $job.OsType,$uploadCompletion,$tier1CopyCompletion,$tier2CopyCompletion,$imageCreationCompletion, $errorMessages.Count)
     
