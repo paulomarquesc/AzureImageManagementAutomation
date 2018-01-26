@@ -1602,13 +1602,13 @@ function Get-AzureRmImgMgmtStorageContext
         [string]$subscriptionId
     )
 
+    $armContext = Get-AzureRmContext
+    Write-Verbose "Azure RM Subscription: $($armContext.subscription.id)" -verbose
+
     # Performing a loop to get the destination context with 5 attempts
     $retryCount = 0
     while (($context -eq $null) -and ($retryCount -lt $retry))
     {
-        $armContext = Get-AzureRmContext
-        Write-Verbose "Azure RM Subscription: $($armContext.subscription.id)" -verbose
-
         if (-not ([string]::IsnullOrEmpty($subscriptionId)))
         {
             if ($armContext.subscription.id -ne $subscriptionId)
