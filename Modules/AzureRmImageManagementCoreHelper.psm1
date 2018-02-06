@@ -417,7 +417,7 @@ function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Ce
     New-AzureRmADApplication -DisplayName $ApplicationDisplayName -HomePage ("http://" + $applicationDisplayName) -IdentifierUris ("http://" + $KeyId) -KeyCredentials $KeyCredential | out-null
 
     $Retries = 0;
-    While ($Application -eq $null -and $Retries -le 16)
+    While ($Application -eq $null -and $Retries -le 30)
     {
         Start-Sleep -s 60
         $Application = Get-AzureRmADApplication -IdentifierUri "http://$KeyId"
@@ -435,7 +435,7 @@ function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Ce
     $GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
 
     $Retries = 0;
-    While ($GetServicePrincipal -eq $null -and $Retries -le 16)
+    While ($GetServicePrincipal -eq $null -and $Retries -le 30)
     {
         Start-Sleep -s 60
         $GetServicePrincipal = Get-AzureRmADServicePrincipal -ObjectId $ServicePrincipal.Id
@@ -449,7 +449,7 @@ function New-AzureRmImgMgmtServicePrincipal([System.Security.Cryptography.X509Ce
     
     $NewRole = New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue
     $Retries = 0;
-    While ($NewRole -eq $null -and $Retries -le 16)
+    While ($NewRole -eq $null -and $Retries -le 30)
     {
         Start-Sleep -s 60
         New-AzureRMRoleAssignment -RoleDefinitionName Contributor -ServicePrincipalName $Application.ApplicationId -ErrorAction SilentlyContinue | out-null
@@ -719,10 +719,16 @@ function New-AzureRmImgMgmtRunAsAccount
     $TenantID = $SubscriptionInfo | Select TenantId -First 1
     $Thumbprint = $PfxCert.Thumbprint
     $ConnectionFieldValues = @{"ApplicationId" = ($ApplicationId.ToString()); "TenantId" = $TenantID.TenantId; "CertificateThumbprint" = $Thumbprint; "SubscriptionId" = $SubscriptionId}
+    
+    Write-Verbose "ConnectionFieldValues: $($ConnectionFieldValues | ConvertTo-json)" -Verbose
 
     $app = Get-AzureRmADApplication -ApplicationId ($ApplicationId.ToString())
 
+    Write-Verbose "Application: $($app | ConvertTo-json)" -Verbose
+
     $svcPrincipal = Get-AzureRmADServicePrincipal -ServicePrincipalName ($ApplicationId.ToString())
+
+    Write-Verbose "Service Princiapl: $($svcPrincipal | ConvertTo-json)" -Verbose
 
     # Create an Automation connection asset named AzureRunAsConnection in the Automation account. This connection uses the service principal.
     New-AzureRmImgMgmtAutomationConnectionAsset $ResourceGroup $AutomationAccountName $ConnectionAssetName $ConnectionTypeName $ConnectionFieldValues
@@ -1613,7 +1619,7 @@ function Get-AzureRmImgMgmtStorageContext
         {
             if ($armContext.subscription.id -ne $subscriptionId)
             {
-                Select-AzureRmSubscription -SubscriptionId $subscriptionId
+                Select-AzureRmSubscription -SubscriptionId $subscriptionId | out-null
             }
         }
 
@@ -1636,7 +1642,7 @@ function Get-AzureRmImgMgmtStorageContext
         $retryCount++
     }
 
-    Select-AzureRmSubscription -SubscriptionId $armContext.subscription.id
+    Select-AzureRmSubscription -SubscriptionId $armContext.subscription.id | out-null
 
     if ($context -eq $null)
     {

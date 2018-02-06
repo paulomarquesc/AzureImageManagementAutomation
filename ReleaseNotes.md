@@ -1,6 +1,10 @@
 
 # Release Notes
 
+### Release 2/06/2018
+* Increased total wait time for Application and Service Principal to 30 minutes, being checked every 60 seconds
+* Fixed a bug related to function Get-AzureRmImgMgmtStorageContext that was returning System.Object insted of Storage Context Object.
+
 ### Release 1/24/2018
 * Implementation of a feature to ignore runbook schedules and perform the VHD distribution and image creation as quick as possible
 * Fixed a setup.ps1 issue where the attribute of maxJobsCount was not being added to the automation accounts, leading to an automation account not being able to be selected for tier 2 VHD distribution or image creation processes 
