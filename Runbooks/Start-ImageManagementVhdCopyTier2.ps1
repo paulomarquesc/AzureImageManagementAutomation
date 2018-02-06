@@ -151,7 +151,7 @@ try
 
     Select-AzureRmSubscription -SubscriptionId $DestinationStorageAccount.SubscriptionId 
 
-    Start-sleep -s 10
+    Start-sleep -s 15
 }
 catch
 {
@@ -168,8 +168,7 @@ try
 
     $destContext = Get-AzureRmImgMgmtStorageContext -ResourceGroupName $DestinationStorageAccount.resourceGroupName `
                                                     -StorageAccountName $DestinationStorageAccount.storageAccountName `
-                                                    -retry 60 `
-                                                    -retryWaitSeconds 60 
+                                                    -subscriptionId $DestinationStorageAccount.SubscriptionId
 }
 catch
 {
@@ -269,12 +268,12 @@ if ($IgnoreSchedule)
 
     $status = Get-AzureRmImgMgmtJobStatus -ConfigStorageAccountResourceGroupName $ConfigStorageAccountResourceGroupName -ConfigStorageAccountName $configStorageAccountName -ConfigurationTableName $ConfigurationTableName -job $job[0]
 
-    if (($status.Tier2CopyCompletion -eq 100) -and ($status.ErrorCount -eq 0))
+    if (($status.Tier2CopyCompletion -ge 100) -and ($status.ErrorCount -eq 0))
     {
         $mainAutomationAccount = Get-AzureRmImgMgmtAutomationAccount -table $configurationTable -AutomationAccountType "main"
 
         $msg = "Tier 2 is completed, starting image creation process immediately, ignoring runbook schedule"
-        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
+        Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
         
         $params = @{"Tier0SubscriptionId"=Tier0SubscriptionId;
                     "ConfigStorageAccountResourceGroupName"=$ConfigStorageAccountResourceGroupName;

@@ -1609,7 +1609,7 @@ function Get-AzureRmImgMgmtStorageContext
     )
 
     $armContext = Get-AzureRmContext
-    Write-Verbose "Azure RM Subscription: $($armContext.subscription.id)" -verbose
+    Write-Output "Azure RM Subscription: $($armContext.subscription.id)"
 
     # Performing a loop to get the destination context with 5 attempts
     $retryCount = 0
@@ -1630,12 +1630,12 @@ function Get-AzureRmImgMgmtStorageContext
         catch
         { 
             # Avoiding temporary intermittence to make this fail
-            Write-Verbose "An Error Ocurred: $_" -Verbose
+            Write-Output "An Error Ocurred: $_"
         }
         
         if ($context -eq $null)
         {
-            Write-Verbose "Context is still null, retrying for storage account $storageAccountName at resource group $resourceGroupName, retry count: $retryCount" -Verbose
+            Write-Output "Context is still null, retrying for storage account $storageAccountName at resource group $resourceGroupName, retry count: $retryCount"
             Start-Sleep -Seconds $retryWaitSeconds
         }
         
