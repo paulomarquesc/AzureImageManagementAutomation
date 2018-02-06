@@ -285,7 +285,7 @@ if ($IgnoreSchedule)
             Start-AzureRmAutomationRunbook  -Name "Start-ImageManagementImageCreation" `
                                                 -Parameters $params `
                                                 -AutomationAccountName $mainAutomationAccount.automationAccountName `
-                                                -ResourceGroupName $mainAutomationAccount.resourceGroupName
+                                                -ResourceGroupName $mainAutomationAccount.resourceGroupName -Wait
 
             $msg = "Start-ImageManagementImageCreation started"
             Add-AzureRmImgMgmtLog -output -logTable $log -jobId $jobId -step ([steps]::tier2Distribution) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
