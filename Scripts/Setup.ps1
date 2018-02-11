@@ -80,6 +80,7 @@ param
     )
 
     Add-AzureRmAccount -Credential $cred
+    Select-AzureRmSubscription -SubscriptionId $SubscriptionId
 
     New-AzureRmImgMgmtAutomationAccount -automationAccountName $automationAccountName `
         -resourceGroupName $resourceGroupName `
