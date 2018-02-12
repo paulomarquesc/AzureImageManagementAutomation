@@ -135,10 +135,11 @@ try
 
     $msg = "Creating new image $imageName"
     Add-AzureRmImgMgmtLog -output -logTable $log -jobId $vhdInfo.JobId  -step ([steps]::imageCreation) -moduleName $moduleName -message $msg -Level ([logLevel]::Informational)
-
+    
     $imageConfig = New-AzureRmImageConfig -Location $vhdInfo.location
     $imageConfig = Set-AzureRmImageOsDisk -Image $imageConfig -OsType $vhdInfo.osType -OsState Generalized -BlobUri $vhdInfo.vhdUri
 
+    Select-AzureRmSubscription -SubscriptionId $vhdInfo.subscriptionId
     New-AzureRmImage -ImageName $imageName -ResourceGroupName $vhdInfo.imagesResourceGroup -Image $imageConfig
 
     Write-Output "Selecting tier 0 subscription $tier0SubscriptionId back"

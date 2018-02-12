@@ -245,7 +245,117 @@ Currently for steps/phases 1 and 2, there is not much to be done, for the other 
 
 
 ### Image Creation
-* abc
+Sometimes we may have an issue during the image creation process, this is an example of an issue that we might have while evaluating the status of a distribution job:
+
+```powershell
+# Getting configuration table reference
+
+$configurationTable = Get-AzureRmImgMgmtTable -ResourceGroup $ConfigStorageAccountResourceGroupName -StorageAccountName $configStorageAccountName -tableName $configurationTableName
+
+# Getting job list
+
+$jobs = Get-AzureRmImgMgmtJob -ConfigurationTable $configurationTable
+
+# Looking at the jobs
+
+$jobs 
+
+```
+
+Result
+
+```
+JobId          : a0ed7556-1b5e-4d09-8874-9e175a34078d
+SubmissionDate : 2/11/2018 6:48:45 PM
+Description    : Test submission 01
+VhdName        : centos-golden-image.vhd
+ImageName      : Centos7.3-CustomImage-v1.0
+OsType         : Linux
+```
+
+```powershell
+# Getting status of this job
+
+$status = Get-AzureRmImgMgmtJobStatus -ConfigurationTable $configurationTable -job $jobs[0]
+
+# Result
+$status
+
+```
+
+```
+UploadCompletion        : 100
+Tier1CopyCompletion     : 100
+Tier2CopyCompletion     : 100
+ImageCreationCompletion : 88
+ErrorCount              : 1
+ErrorLog                : {New-ImageManagementImage.ps1}
+JobId                   : a0ed7556-1b5e-4d09-8874-9e175a34078d
+SubmissionDate          : 2/11/2018 6:48:45 PM
+Description             : Test submission 01
+VhdName                 : centos-golden-image.vhd
+ImageName               : Centos7.3-CustomImage-v1.0
+OsType                  : Linux
+```
+
+Here we notice that ErrorCount is greater than 0 and that ImageCreationCompletion is at 88%, this clearly means that something went wrong. The following command line will show the error list for us:
+
+```powershell
+$Status.ErrorLog
+```
+
+Result
+
+```
+jobId      : a0ed7556-1b5e-4d09-8874-9e175a34078d
+timeStamp  : 2/11/2018 9:01:23 PM
+step       : imageCreation
+moduleName : New-ImageManagementImage.ps1
+logLevel   : Error
+message    : An error occured trying to create an image. VhdDetails: {
+                 "jobId":  "a0ed7556-1b5e-4d09-8874-9e175a34078d",
+                 "osType":  "Linux",
+                 "imagesResourceGroup":  "Images-RG",
+                 "imageName":  "Centos7.3-CustomImage-v1.0",
+                 "subscriptionId":  "4a49ea85-ce71-4800-b854-5d18e557921e",
+                 "location":  "uksouth",
+                 "vhdUri":  "https://pmcosimgsa04587tier2.blob.core.windows.net/vhds/centos-golden-image.vhd"
+             }.
+             Error: The source blob https://pmcosimgsa04587tier2.blob.core.windows.net/vhds/centos-golden-image.vhd does not belong to a storage account in subscription 4c88ebbb-1a1d-4e0a-980c-f76b82743539.
+             ErrorCode: InvalidParameter
+             ErrorMessage: The source blob https://pmcosimgsa04587tier2.blob.core.windows.net/vhds/centos-golden-image.vhd does not belong to a storage account in subscription
+             4c88ebbb-1a1d-4e0a-980c-f76b82743539.
+             StatusCode: 400
+             ReasonPhrase: Bad Request
+             OperationID : 7fb58753-d9ff-4e75-9f30-8acd98ec749c
+```
+
+After identifying the error and fixiging whatever it is we can retry only the Image creation process. Notice that the error log contains a field called message, we will reuse part of this content to retry it, in this case we need the original json string and we can for example obtain it with:
+
+```powershell
+"{" + $status.errorlog[0].message.tostring().split("{",[System.StringSplitOptions]::RemoveEmptyEntries)[1].split("}",[System.StringSplitOptions]::RemoveEmptyEntries)[0] + "}"
+```
+
+Result
+
+```
+{
+    "jobId":  "a0ed7556-1b5e-4d09-8874-9e175a34078d",
+    "osType":  "Linux",
+    "imagesResourceGroup":  "Images-RG",
+    "imageName":  "Centos7.3-CustomImage-v1.0",
+    "subscriptionId":  "4a49ea85-ce71-4800-b854-5d18e557921e",
+    "location":  "uksouth",
+    "vhdUri":  "https://pmcosimgsa04587tier2.blob.core.windows.net/vhds/centos-golden-image.vhd"
+}
+```
+
+Copy this content, open Storage Explorer (if you don't have it installed, please install from https://azure.microsoft.com/en-us/features/storage-explorer/).
+
+Go to the tier 0 storage account, expand Queues and find image-creation-process-queue.
+
+Click in the "+ Add Message" button and paste the json content and wait for the schedule to kick in.
+
 
 
 # Troubleshooting
